@@ -18,7 +18,7 @@ const REASON = {
 };
 
 const state = {
-  meta: null, terms: [],
+  meta: null, terms: [], llm: null,
   today: null, tIdx: 0, parentJudge: false,
   items: [], iPage: 1, iTotal: 0, iMore: false,
   filters: { subject: "all", status: "reviewing", term: null, kp_id: null, q: "" },
@@ -54,6 +54,10 @@ function toast(msg) {
 function openModal(html) {
   $("#modalBody").innerHTML = html;
   $("#modal").classList.remove("hidden");
+}
+function photoModal(photoId) {
+  openModal(`<div class="photo-view" data-act="closeModal" title="点击任意处关闭">
+    <img src="/photos/${photoId}" alt="题目照片"></div>`);
 }
 function closeModal() { $("#modal").classList.add("hidden"); }
 $("#modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
@@ -107,6 +111,8 @@ function flyStar(x, y, n = 1) {
 async function boot() {
   try {
     state.meta = await api("/api/meta");
+    state.role = state.meta.role;                 // 家长/孩子分端：孩子只看复习界面
+    api("/api/llm/status").then(s => { state.llm = s; }).catch(() => {});
     hideLogin();
     if (!location.hash) location.hash = "#/today";
     route();
@@ -116,8 +122,16 @@ function showLogin() { $("#loginMask").classList.remove("hidden"); }
 function hideLogin() { $("#loginMask").classList.add("hidden"); }
 
 const PAGES = { today: renderToday, items: renderItems, add: renderAdd, stats: renderStats, me: renderMe };
+const CHILD_ALLOWED = ["today", "me"];          // 孩子端仅今日复习 + 我的
 function route() {
   const tab = (location.hash.replace("#/", "") || "today").split("?")[0];
+  if (state.role === "child" && !CHILD_ALLOWED.includes(tab)) { location.hash = "#/today"; return; }
+  if (tab !== "today") stopAiPoll();
+  // 分端可见性：孩子隐藏 错题本/加题/统计
+  $$(".tab").forEach(t => {
+    const parentOnly = ["items", "add", "stats"].includes(t.dataset.tab);
+    t.style.display = (state.role === "child" && parentOnly) ? "none" : "";
+  });
   $$(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === tab));
   Object.entries(PAGES).forEach(([k, el]) =>
     $(`#page-${k}`).classList.toggle("hidden", k !== tab));
@@ -171,22 +185,24 @@ async function renderToday() {
       ${data.total_due > n ? `<span class="pill" style="color:#9A6B00">还有 ${data.total_due - n} 只在排队</span>` : ""}
       ${data.pending_verify ? `<span class="pill" style="color:#D94A3B">待复核 ${data.pending_verify} 题</span>` : ""}
     </div>`;
-
-  if (!n) {
-    box.innerHTML = head + `
-      <div class="card empty-state">
-        <div class="mascot">${monsterSVG("#B8AA9A", "sleepy", 120)}</div>
-        <h3>今天的小怪兽都消灭啦</h3>
-        <p>到期了才会出现在这里，不用提前刷题</p>
-      </div>`;
-    return;
-  }
-  box.innerHTML = head + `<div class="progress">
+  const banner = state.today?.challenges?.length
+    ? `<div class="variant-banner" data-act="challengeList">⚔️ 还有 ${state.today.challenges.length} 只变式怪等你挑战！</div>` : "";
+  if (n) {
+    box.innerHTML = banner + head + `<div class="progress">
       <div class="bar"><i id="tBar" style="width:0%"></i></div>
       <div class="txt" id="tProg">${state.tIdx} / ${n}</div>
     </div>
     <div id="todayStage"></div>`;
-  renderTodayCard();
+    renderTodayCard();
+    return;
+  }
+  box.innerHTML = banner + head + `
+    <div class="card empty-state">
+      <div class="mascot">${monsterSVG("#B8AA9A", "sleepy", 120)}</div>
+      <h3>今天的小怪兽都消灭啦</h3>
+      <p>到期了才会出现在这里，不用提前刷题</p>
+      ${state.today?.challenges?.length ? `<p style="margin-top:10px"><button class="btn btn-brand btn-sm" data-act="challengeList">⚔️ 去挑战变式怪</button></p>` : ""}
+    </div>`;
 }
 
 function itemFront(it) {
@@ -206,12 +222,66 @@ function itemFront(it) {
         <div class="qword-sub">${it.subject === "english" ? "看中文提示，在纸上写出英文单词"
           : it.subject === "chinese" ? "看拼音提示，在纸上写出汉字" : "看提示，写一写"}</div>
       </div>
-      <div class="qfooter"><button class="btn btn-brand btn-xl" data-act="flip">我想好了，翻面对答案</button></div>`;
+      ${hintBoxHTML()}
+      <div class="qfooter">${hintBtnHTML()}<button class="btn btn-brand btn-xl" data-act="flip">我想好了，翻面对答案</button></div>`;
   }
   const pid = it.photo_ids?.[0];
   return head + `
     <div class="qbody"><img class="qphoto" src="/photos/${pid}" alt="题目照片"></div>
-    <div class="qfooter"><button class="btn btn-brand btn-xl" data-act="flip">我想好了，翻面对答案</button></div>`;
+    ${hintBoxHTML()}
+    <div class="qfooter">${hintBtnHTML()}<button class="btn btn-brand btn-xl" data-act="flip">我想好了，翻面对答案</button></div>`;
+}
+
+/* ----- 渐进式提示（翻面前的思考引导） ----- */
+function hintsAvailable() {
+  return state.meta?.settings?.ai_hint_enabled !== false && state.llm?.configured;
+}
+function hintBtnHTML() {
+  return hintsAvailable() ? `<button class="btn btn-ghost hint-btn" data-act="hint">💡 卡住了？给点提示</button>` : "";
+}
+function hintBoxHTML() {
+  return hintsAvailable() ? `<div id="hintBox" class="ai-box hidden"></div>` : "";
+}
+
+let hintState = { idx: 0, list: null, loading: false };
+
+async function showHint(btnEl) {
+  const it = state.today.items[state.tIdx];
+  if (!it || hintState.loading) return;
+  if (!hintState.list) {
+    let cached = null;
+    try { cached = JSON.parse(it.ai_hints || "null"); } catch (e) { /* 忽略坏缓存 */ }
+    if (!Array.isArray(cached) || !cached.length) {
+      // 没有缓存提示：现场生成（首次点击才付费）
+      hintState.loading = true;
+      const old = btnEl ? btnEl.textContent : "";
+      if (btnEl) { btnEl.textContent = "🤖 想一下，提示马上来…"; btnEl.disabled = true; }
+      try {
+        const r = await api(`/api/items/${it.id}/hints`, { method: "POST" });
+        cached = r.hints;
+        it.ai_hints = JSON.stringify(r.hints);
+      } catch (e) {
+        toast(e.message);
+        if (btnEl) { btnEl.textContent = old; btnEl.disabled = false; }
+        hintState.loading = false;
+        return;
+      }
+      hintState.loading = false;
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = old; }
+    }
+    hintState.list = cached;
+  }
+  if (!hintState.list || !hintState.list.length) { toast("这道题暂无提示"); return; }
+  hintState.idx = Math.min(hintState.idx + 1, hintState.list.length);
+  const box = $("#hintBox");
+  if (box) {
+    box.classList.remove("hidden");
+    box.innerHTML = hintState.list.slice(0, hintState.idx).map((h, n) =>
+      `<div class="ai-row"><span class="ai-k">💡 提示${n + 1}</span><span>${esc(h)}</span></div>`).join("")
+      + `<div class="ai-src">用了提示，判定时记得如实选「提示后才对」哦</div>`;
+  }
+  if (hintState.idx >= hintState.list.length && btnEl) btnEl.classList.add("hidden");
+  else if (btnEl) btnEl.textContent = "💡 再看一条提示";
 }
 
 function itemBack(it) {
@@ -231,6 +301,7 @@ function itemBack(it) {
         <span class="w right">${esc(it.correct_text || "")}</span>
       </div>
       ${it.solution ? `<p style="text-align:center;color:var(--ink2);font-size:13px">${esc(it.solution)}</p>` : ""}
+      ${aiBlockHTML(it)}
     </div>`;
   } else {
     const pid = it.photo_ids?.[0];
@@ -239,6 +310,7 @@ function itemBack(it) {
       ${it.wrong_answer ? `<p style="margin-top:10px;font-size:14px">✏️ 当时错在：<b>${esc(it.wrong_answer)}</b></p>` : ""}
       ${it.solution ? `<p style="margin-top:8px;font-size:14px">✅ 正确做法：<b>${esc(it.solution)}</b></p>` : ""}
       ${(!it.solution && !it.wrong_answer) ? `<div class="parent-need">这题没有录入答案，请家长拿原卷对照判定</div>` : ""}
+      ${aiBlockHTML(it)}
     </div>`;
   }
   const pv = state.meta.settings.verify_enabled;
@@ -269,19 +341,50 @@ function renderTodayCard() {
       <div class="qface back hidden" id="faceB">${itemBack(it)}</div>
     </div>`;
   $("#pjTog")?.addEventListener("change", e => { state.parentJudge = e.target.checked; });
+  hintState = { idx: 0, list: null, loading: false };
+  try {
+    const cached = JSON.parse(it.ai_hints || "null");
+    if (Array.isArray(cached)) hintState.list = cached;
+  } catch (e) { /* 忽略坏缓存 */ }
+  watchAiPending(it);
 }
 
 function renderTodayDone() {
+  stopAiPoll();
   const n = state.today.items.length;
   $("#tBar").style.width = "100%";
   $("#tProg").textContent = `${n} / ${n}`;
+  const chs = state.today.challenges || [];
+  const challengeRow = chs.length
+    ? `<p style="margin-top:14px"><b>⚔️ 变式挑战</b><br>
+        <span style="font-size:12px;color:var(--ink2)">消灭的题可以再战同类怪，答对 +2 颗星</span></p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px">
+        ${chs.map(c => `<button class="btn btn-ghost btn-sm" data-variant="${c.item_id}">
+          ⚔️ ${SUBJ[c.subject]?.label}${c.kp_name ? " · " + esc(c.kp_name) : ""}</button>`).join("")}</div>` : "";
   $("#todayStage").innerHTML = `
     <div class="card empty-state">
       <div class="mascot">${monsterSVG("#22B573", "cheer", 130)}</div>
       <h3>今天的小怪兽都消灭啦！</h3>
       <p>今日共得 ${state.today.stars_today} 颗星，明天有新的到期题再来</p>
+      ${challengeRow}
       <p style="margin-top:14px"><a class="btn btn-ghost" href="#/me">去我的页面看星星</a></p>
     </div>`;
+  $$("#todayStage [data-variant]").forEach(b =>
+    b.addEventListener("click", () => openVariantChallenge(+b.dataset.variant)));
+}
+
+function challengeListModal() {
+  const chs = state.today.challenges || [];
+  if (!chs.length) return;
+  openModal(`<h3>⚔️ 变式挑战</h3>
+    <p class="confirm-text">打败过的怪兽可以再战同类怪，答对 +2 颗星，做错也不影响复习计划</p>
+    ${chs.map(c => `<div class="ch-row">
+      <span>${SUBJ[c.subject]?.label}${c.kp_name ? " · " + esc(c.kp_name) : ""}</span>
+      <button class="btn btn-brand btn-sm" data-cgo="${c.item_id}">挑战</button>
+    </div>`).join("")}
+    <div class="m-acts"><button class="btn btn-ghost" data-act="closeModal">关闭</button></div>`);
+  $$("#modalBody [data-cgo]").forEach(b =>
+    b.addEventListener("click", () => openVariantChallenge(+b.dataset.cgo)));
 }
 
 async function judge(result, btnEl) {
@@ -308,10 +411,128 @@ async function judge(result, btnEl) {
     state.today.stars_today += stars + (res.day_bonus ? 2 : 0);
     const ps = $("#pillStars");
     if (ps) ps.innerHTML = `<span class="star-ico">★</span> 今日 +${state.today.stars_today}`;
+    const justMastered = res.item.status === "mastered" && it.status !== "mastered";
+    Object.assign(it, res.item);   // 同步最新状态供完成页使用
     state.tIdx++;
     if (state.tIdx >= state.today.items.length) renderTodayDone();
     else renderTodayCard();
+    if (justMastered && state.llm?.configured) openMasteredBonus(it, stars);
   } catch (e) { toast(e.message); }
+}
+
+/* ----- 变式题（消灭彩蛋）：再战同类怪 ----- */
+function openMasteredBonus(it, stars) {
+  openModal(`<h3>🎉 消灭了这只小怪兽！</h3>
+    <div style="text-align:center;margin:6px 0">${monsterSVG("#22B573", "cheer", 100)}</div>
+    <p class="confirm-text" style="text-align:center">这只怪兽被彻底打败啦，+${stars} 颗星入账！<br>
+      要不要<b>再战一只同类怪兽</b>，试试举一反三？<br>
+      <span style="font-size:12px;color:var(--ink2)">答对得 2 颗星；做错也不影响复习计划</span></p>
+    <div class="m-acts">
+      <button class="btn btn-ghost" data-act="closeModal">继续复习</button>
+      <button class="btn btn-brand" id="variantGo">⚔️ 再战同类怪</button>
+    </div>`);
+  $("#variantGo").onclick = () => openVariantChallenge(it.id);
+}
+
+async function openVariantChallenge(itemId) {
+  let data;
+  try { data = await api(`/api/items/${itemId}/variant`); }
+  catch (e) { toast(e.message); return; }
+  if (!data.exists) {
+    closeModal();
+    toast("⚔️ 变式怪还在生成中，稍后再来挑战");
+    return;
+  }
+  if (data.locked) {
+    closeModal();
+    toast(data.result ? "这只变式怪你已经挑战过啦" : "这道变式题等家长审阅后开放挑战");
+    return;
+  }
+  const v = data.variant;
+  openModal(`<h3>⚔️ 变式挑战 · 举一反三</h3>
+    <div class="ai-box"><div class="ai-row"><span class="ai-k">题目</span><span>${esc(v.question)}</span></div></div>
+    <div class="m-acts" id="vcStage1">
+      <button class="btn btn-ghost" data-act="closeModal">先不挑战了</button>
+      <button class="btn btn-brand" id="vcReveal">我想好了，看答案</button>
+    </div>
+    <div id="vcAnswer" class="hidden">
+      <div class="ai-box" style="margin-top:6px">
+        <div class="ai-row"><span class="ai-k">答案</span><span>${esc(v.answer)}</span></div>
+      </div>
+      <p class="confirm-text" style="text-align:center">对照答案，如实判定</p>
+      <div class="m-acts">
+        <button class="btn btn-pass" id="vcPass">我做对了 +2★</button>
+        <button class="btn btn-fail" id="vcFail">没做对</button>
+      </div>
+    </div>`);
+  $("#vcReveal").onclick = () => {
+    $("#vcStage1").classList.add("hidden");
+    $("#vcAnswer").classList.remove("hidden");
+  };
+  const doJudge = async result => {
+    try {
+      const r = await api(`/api/variants/${v.id}/judge`, { method: "POST", body: { result } });
+      closeModal();
+      if (state.today?.challenges) {   // 挑战完毕：即时更新待挑战列表与横幅
+        state.today.challenges = state.today.challenges.filter(c => c.item_id !== itemId);
+        const b = document.querySelector(".variant-banner");
+        if (b) {
+          if (state.today.challenges.length)
+            b.textContent = `⚔️ 还有 ${state.today.challenges.length} 只变式怪等你挑战！`;
+          else b.remove();
+        }
+      }
+      if (result === "pass") {
+        flyStar(innerWidth / 2, innerHeight / 3, 2);
+        if (state.today) {
+          state.today.stars_today += r.stars;
+          const ps = $("#pillStars");
+          if (ps) ps.innerHTML = `<span class="star-ico">★</span> 今日 +${state.today.stars_today}`;
+        }
+        toast("变式挑战成功！+2 颗星 ⚔️");
+      } else {
+        toast("没关系，这只怪兽回去再练练，不影响复习计划");
+      }
+    } catch (e) { toast(e.message); }
+  };
+  $("#vcPass").onclick = () => doJudge("pass");
+  $("#vcFail").onclick = () => doJudge("fail");
+}
+
+/* ----- AI 错题分析：展示与轮询 ----- */
+function aiBlockHTML(it, opts = {}) {
+  if (it.ai_status === "done" && (it.ai_points || it.ai_pitfalls)) {
+    return `<div class="ai-box">
+      <div class="ai-row"><span class="ai-k">🎯 考点</span><span>${esc(it.ai_points || "—")}</span></div>
+      ${it.ai_pitfalls ? `<div class="ai-row"><span class="ai-k">⚠️ 易错点</span><span>${esc(it.ai_pitfalls)}</span></div>` : ""}
+      ${it.ai_model ? `<div class="ai-src">🤖 ${esc(it.ai_model)} 分析</div>` : ""}
+    </div>`;
+  }
+  if (it.ai_status === "pending")
+    return `<div class="ai-box ai-pending">🤖 AI 正在分析这道题的考点和易错点…</div>`;
+  if (opts.showFail && it.ai_status === "failed")
+    return `<div class="ai-box ai-fail">🤖 上次分析没成功：${esc(it.ai_error || "未知原因")}</div>`;
+  return "";
+}
+
+let aiPollTimer = null;
+function stopAiPoll() {
+  if (aiPollTimer) { clearInterval(aiPollTimer); aiPollTimer = null; }
+}
+function watchAiPending(it) {
+  stopAiPoll();
+  if (it.ai_status !== "pending") return;
+  const id = it.id;
+  aiPollTimer = setInterval(async () => {
+    try {
+      Object.assign(it, await api(`/api/items/${id}`));
+    } catch (e) { stopAiPoll(); return; }
+    if (it.ai_status !== "pending") {
+      stopAiPoll();
+      const fb = $("#faceB");
+      if (fb && !fb.classList.contains("hidden")) fb.innerHTML = itemBack(it);
+    }
+  }, 4000);
 }
 
 /* 全局事件代理（动态内容） */
@@ -325,6 +546,8 @@ document.addEventListener("click", e => {
     return;
   }
   if (act === "judge") { judge(el.dataset.r, el); return; }
+  if (act === "hint") { showHint(el); return; }
+  if (act === "challengeList") { challengeListModal(); return; }
   if (act === "closeModal") { closeModal(); return; }
 });
 
@@ -483,16 +706,40 @@ $("#page-items").addEventListener("click", async e => {
   }
 });
 
-function editItemModal(it) {
+async function editItemModal(it) {
   if (!it) return;
   const kps = kpsFor(it.subject);
+  // 变式题区（家长）：已消灭的题可查看/预审/重新生成变式题
+  let varSection = "";
+  let vd = null;
+  if (state.role !== "child") {
+    try { vd = await api(`/api/items/${it.id}/variant`); } catch (e) { vd = null; }
+    if (vd && vd.exists) {
+      const v = vd.variant;
+      const stateBadge = v.status === "approved"
+        ? '<span class="kp-badge">已放行</span>' : '<span class="reason-badge">待预审</span>';
+      const usedBadge = v.used ? `<span class="kp-badge">已挑战${v.result === "pass" ? "✓" : "✗"}</span>` : "";
+      varSection = `<div class="ai-box" style="gap:8px">
+        <div class="ai-row"><span class="ai-k">⚔️ 变式题</span><span>${stateBadge}${usedBadge}</span></div>
+        <div class="pv-lines"><div class="pv-q">${esc(v.question)}</div>
+          <div>答案：${esc(v.answer)}</div></div>
+        ${!v.used ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${v.status === "pending" ? '<button class="btn btn-brand btn-sm" id="vApprove">✓ 放行给孩子</button>' : ""}
+          <button class="btn btn-ghost btn-sm" id="vRegen">↻ 重新生成</button>
+          <button class="btn btn-ghost btn-sm" id="vReject">✗ 驳回</button></div>`
+          : '<div class="ai-src">已挑战过，不可重玩</div>'}
+      </div>`;
+    } else if (it.status === "mastered" && state.llm?.configured) {
+      varSection = `<div class="ai-box ai-none">⚔️ 变式题：尚未生成
+        <button class="btn btn-ghost btn-sm" id="vGen" style="margin-left:8px">立即生成</button></div>`;
+    }
+  }
   // 原题预览：照片题显示原图，错字词显示三件套对照，编辑时心里有底
   const preview = it.item_type === "photo"
     ? (it.photo_ids?.length
         ? `<div class="edit-preview">
-             <img src="/photos/${it.photo_ids[0]}" alt="原题照片"
-                  onclick="window.open('/photos/${it.photo_ids[0]}','_blank')">
-             <div class="edit-preview-tip">点击图片可查看原图</div>
+             <img src="/photos/${it.photo_ids[0]}" alt="原题照片" onclick="photoModal(${it.photo_ids[0]})">
+             <div class="edit-preview-tip">点击图片放大查看</div>
            </div>`
         : `<div class="edit-preview empty">这张照片题没有图片（可能被误删过文件）</div>`)
     : `<div class="edit-preview word">
@@ -501,7 +748,30 @@ function editItemModal(it) {
            <span class="warrow">→</span>
            <span class="w right">${esc(it.correct_text || "")}</span></div>
        </div>`;
-  openModal(`<h3>编辑错题</h3>${preview}
+  // AI 归因建议：与当前错因/知识点不一致时显示，一键采用（AI 只提议，家长拍板）
+  const chips = [];
+  if (it.ai_reason_suggest && it.reason !== it.ai_reason_suggest)
+    chips.push(`<span class="sug-chip">错因「${REASON[it.ai_reason_suggest] || it.ai_reason_suggest}」<b data-sug="reason" data-v="${it.ai_reason_suggest}">采用</b></span>`);
+  if (it.ai_kp_suggest && it.ai_kp_suggest !== it.kp_name)
+    chips.push(`<span class="sug-chip">知识点「${esc(it.ai_kp_suggest)}」<b data-sug="kp" data-v="${esc(it.ai_kp_suggest)}">采用</b></span>`);
+  const sug = chips.length
+    ? `<div class="ai-box ai-sug"><span class="ai-k">🤖 AI 建议</span>${chips.join("")}</div>` : "";
+  // AI 分析区：已完成展示结果；失败/未分析且已配置模型时给操作按钮
+  const ai = it.ai_status === "done"
+    ? `<div class="ai-box">
+        <div class="ai-row"><span class="ai-k">🎯 考点</span><span>${esc(it.ai_points || "—")}</span></div>
+        ${it.ai_pitfalls ? `<div class="ai-row"><span class="ai-k">⚠️ 易错点</span><span>${esc(it.ai_pitfalls)}</span></div>` : ""}
+        ${it.ai_model ? `<div class="ai-src">🤖 ${esc(it.ai_model)} 分析</div>` : ""}
+      </div>`
+    : it.ai_status === "pending"
+      ? `<div class="ai-box ai-pending">🤖 AI 正在分析这道题，完成后重新打开可看结果</div>`
+      : it.ai_status === "failed"
+        ? `<div class="ai-box ai-fail">🤖 上次分析没成功：${esc(it.ai_error || "未知原因")}</div>`
+        : `<div class="ai-box ai-none">这道题还没有 AI 分析</div>`;
+  const aiBtn = it.ai_status !== "pending" && state.llm?.configured
+    ? `<button class="btn btn-ghost btn-sm" id="eAiBtn" style="margin-top:8px">${it.ai_status === "done" || it.ai_status === "failed" ? "重新分析" : "🤖 AI 分析这题"}</button>`
+    : "";
+  openModal(`<h3>编辑错题</h3>${preview}${sug}${ai}${aiBtn}${varSection}
     <div class="field-label">科目</div>
     <select class="input" id="eSubj">${Object.entries(SUBJ).map(([k, v]) =>
       `<option value="${k}" ${it.subject === k ? "selected" : ""}>${v.label}</option>`).join("")}</select>
@@ -528,6 +798,37 @@ function editItemModal(it) {
       <button class="btn btn-ghost" data-act="closeModal">取消</button>
       <button class="btn btn-brand" id="eSave">保存</button>
     </div>`);
+  const vReview = async (action, tip) => {
+    try {
+      await api(`/api/variants/${vd.variant.id}/review`, { method: "POST", body: { action } });
+      toast(tip); editItemModal(it);
+    } catch (e) { toast(e.message); }
+  };
+  $("#vApprove")?.addEventListener("click", () => vReview("approve", "已放行，孩子可以挑战了 ⚔️"));
+  $("#vRegen")?.addEventListener("click", () => vReview("regenerate", "已重新生成，稍后刷新查看"));
+  $("#vReject")?.addEventListener("click", () => vReview("reject", "已驳回该变式题"));
+  $("#vGen")?.addEventListener("click", async () => {
+    try {
+      await api(`/api/items/${it.id}/variant/generate`, { method: "POST" });
+      toast("⚔️ 变式怪生成中，稍后重新打开查看");
+      setTimeout(() => editItemModal(it), 4000);
+    } catch (e) { toast(e.message); }
+  });
+  $$("#modalBody [data-sug]").forEach(b => b.addEventListener("click", async () => {
+    const patch = b.dataset.sug === "reason" ? { reason: b.dataset.v } : { kp_name: b.dataset.v };
+    try {
+      Object.assign(it, await api(`/api/items/${it.id}`, { method: "PATCH", body: patch }));
+      toast("已采用 AI 建议 ✅");
+      editItemModal(it);   // 重开弹窗刷新建议与分析区
+    } catch (e) { toast(e.message); }
+  }));
+  $("#eAiBtn")?.addEventListener("click", async () => {
+    try {
+      await api(`/api/items/${it.id}/analyze`, { method: "POST" });
+      toast("AI 分析已开始，稍后打开可见 🤖");
+      closeModal();
+    } catch (e) { toast(e.message); }
+  });
   $("#eSave").onclick = async () => {
     const body = { subject: $("#eSubj").value, kp_id: +$("#eKp").value || null,
                    reason: $("#eReason").value || null };
@@ -866,7 +1167,7 @@ async function submitPhotoItem() {
     a.photo = null;
     if (payload.kp_id) a.kpSel[a.subject] = payload.kp_id;
     state.meta = await api("/api/meta");   // 刷新自定义知识点
-    toast("已加入明天的复习 ⭐");
+    toast(state.llm?.configured ? "已加入明天的复习 ⭐ AI 正在分析考点…" : "已加入明天的复习 ⭐");
     renderAddBody();
   } catch (e) { toast(e.message); }
 }
@@ -892,7 +1193,7 @@ async function submitWordItem() {
     renderAddBody();
     $("#wTip").style.display = "";
     $("#wPrompt").focus();
-    toast("已加入明天的复习 ⭐");
+    toast(state.llm?.configured ? "已加入明天的复习 ⭐ AI 正在分析考点…" : "已加入明天的复习 ⭐");
   } catch (e) { toast(e.message); }
 }
 
@@ -946,18 +1247,31 @@ async function renderStats() {
     </div>
     <div class="card"><div class="card-title"><span class="ico">👀</span>待复核（孩子判的"做对了"）
       ${s.pending.length ? `<span class="stubborn-badge">${s.pending.length}</span>` : ""}</div>
-      ${s.pending.map(p => `
+      ${s.pending.map(p => {
+        const pvBody = p.item_type === "word"
+          ? `提示「${esc(p.prompt)}」错写「${esc(p.wrong_text)}」→ 应为「${esc(p.correct_text)}」`
+          : `${p.photo_ids?.length
+              ? `<img class="pv-thumb" src="/photos/${p.photo_ids[0]}?size=thumb"
+                   onclick="photoModal(${p.photo_ids[0]})">`
+              : ""}
+             <div class="pv-lines">
+               ${p.question_text
+                 ? `<div class="pv-q">${esc(p.question_text)}</div>`
+                 : `<div class="pv-q pv-dim">${p.photo_ids?.length ? "点缩略图看原题" : "照片题，请对照原卷提问"}</div>`}
+               ${p.wrong_answer ? `<div>✏️ 当时错在：${esc(p.wrong_answer)}</div>` : ""}
+               ${p.solution ? `<div>✅ 正确做法：${esc(p.solution)}</div>` : ""}
+             </div>`;
+        return `
         <div class="pending-card">
           <div class="p-head"><span class="subj-badge sj-${p.subject}">${SUBJ[p.subject]?.label}</span>
-            ${p.kp_name ? `<span class="kp-badge">${esc(p.kp_name)}</span>` : ""}</div>
-          <div class="p-body">${p.item_type === "word"
-            ? `提示「${esc(p.prompt)}」错写「${esc(p.wrong_text)}」→ 应为「${esc(p.correct_text)}」`
-            : (esc(p.wrong_answer || p.solution || "照片题，请对照原卷提问"))}</div>
+            ${p.kp_name ? `<span class="kp-badge">${esc(p.kp_name)}</span>` : ""}
+            <span class="kp-badge">${p.item_type === "word" ? "错字词" : "照片题"}</span></div>
+          <div class="p-body ${p.item_type !== "word" && p.photo_ids?.length ? "pv-photo" : ""}">${pvBody}</div>
           <div class="p-acts">
             <button class="btn btn-pass btn-sm" data-pv="${p.log_id}" data-ok="1">确实做对了</button>
             <button class="btn btn-fail btn-sm" data-pv="${p.log_id}" data-ok="0">其实不对</button>
           </div>
-        </div>`).join("") || "<p style='font-size:13px;color:var(--ink2)'>没有待复核的判定，孩子自评很靠谱</p>"}
+        </div>`; }).join("") || "<p style='font-size:13px;color:var(--ink2)'>没有待复核的判定，孩子自评很靠谱</p>"}
     </div>
     <div class="card"><div class="card-title"><span class="ico">🛟</span>数据备份</div>
       <p style="font-size:14px;margin-bottom:12px">${ageTxt}
@@ -1030,11 +1344,16 @@ async function renderMe() {
         ${state.gloryAll ? "收起" : `查看全部 ${me.glory.length}`}</button>` : ""}
     </div>
     <div class="card"><div class="card-title"><span class="ico">🎁</span>星星兑换规则</div>
-      <textarea class="input" id="rewardRule">${esc(me.reward_rule)}</textarea>
+      ${state.role === "child"
+        ? `<p style="font-size:14px;line-height:1.7">${esc(me.reward_rule)}</p>`
+        : `<textarea class="input" id="rewardRule">${esc(me.reward_rule)}</textarea>
       <div style="margin-top:10px;text-align:right">
-        <button class="btn btn-brand btn-sm" data-act="saveReward">保存规则</button></div>
+        <button class="btn btn-brand btn-sm" data-act="saveReward">保存规则</button></div>`}
     </div>
-    <div class="card"><div class="card-title"><span class="ico">⚙️</span>设置（家长）</div>
+    ${state.role === "child" ? `<div class="card" style="text-align:center">
+      <div style="font-size:13px;color:var(--ink2);margin-bottom:10px">这是你的专属界面，继续加油消灭小怪兽！</div>
+      <button class="btn btn-ghost btn-sm" data-act="logout">退出登录</button>
+    </div>` : `<div class="card"><div class="card-title"><span class="ico">⚙️</span>设置（家长）</div>
       <div class="set-row"><div class="sr-l">每日复习上限<div class="d">到期题多时自动排队</div></div>
         <div class="stepper">
           <button data-act="limit" data-d="-1">−</button>
@@ -1046,8 +1365,22 @@ async function renderMe() {
       </div>
       <div class="set-row"><div class="sr-l">当前学期<div class="d">期末开启新学期，光荣榜保留</div></div>
         <button class="btn btn-ghost btn-sm" data-act="newTerm">开启新学期</button></div>
-      <div class="set-row"><div class="sr-l">修改访问码<div class="d">换新设备登录用</div></div>
+      <div class="set-row"><div class="sr-l">修改访问码（家长）<div class="d">家长设备登录用，拥有全部权限</div></div>
         <button class="btn btn-ghost btn-sm" data-act="chgCode">修改</button></div>
+      <div class="set-row"><div class="sr-l">孩子访问码<div class="d">孩子设备用它登录，只能复习，不能录题/删除/改设置</div></div>
+        <button class="btn btn-ghost btn-sm" data-act="chgChildCode">修改</button></div>
+      <div class="set-row"><div class="sr-l">AI 错题分析<div class="d">${state.llm?.configured
+        ? `${esc(state.llm.label)} · ${esc(state.llm.model)} · 录入后自动分析考点与易错点`
+        : "未开启：编辑 data/llm.json 填入 api_key 后即可"}</div></div>
+        <span style="font-size:22px">${state.llm?.configured ? "🤖" : "💤"}</span></div>
+      <div class="set-row"><div class="sr-l">AI 复习提示<div class="d">翻面前 AI 给两档思考提示，不直接说答案</div></div>
+        <label class="toggle"><input type="checkbox" id="hintTog" ${st.ai_hint_enabled !== false ? "checked" : ""}><span class="tk"></span></label></div>
+      <div class="set-row"><div class="sr-l">变式题家长预审<div class="d">消灭后 AI 出同类变式题，先给你过目再放行；关闭则直接向孩子开放</div></div>
+        <label class="toggle"><input type="checkbox" id="variantTog" ${st.variant_gate !== false ? "checked" : ""}><span class="tk"></span></label></div>
+      <div class="set-row"><div class="sr-l">看图模型（照片 OCR）<div class="d">${state.llm?.vision?.configured
+        ? `${esc(state.llm.vision.label)} · ${esc(state.llm.vision.model)} · 照片题自动识别题干原文`
+        : "未配置：照片题暂无题干文字，分析靠错在/做法推断；llm.json 配 vision_active 即可开启"}</div></div>
+        <span style="font-size:22px">${state.llm?.vision?.configured ? "👁️" : "💤"}</span></div>
       <div class="set-row"><div class="sr-l">数据备份<div class="d">${health.backup.latest
         ? `最近备份 ${fmtAge(health.backup.latest.age_hours)} · ${health.disk_free_mb}MB 空闲` : health.disk_free_mb + "MB 空闲"}</div></div>
         <div style="display:flex;gap:8px">
@@ -1055,12 +1388,18 @@ async function renderMe() {
           <button class="btn btn-ghost btn-sm" data-act="dlBackup">下载</button></div></div>
       <div class="set-row"><div class="sr-l">退出登录</div>
         <button class="btn btn-ghost btn-sm" data-act="logout">退出</button></div>
-    </div>`;
+    </div>`}`;
 
   box.querySelector("[data-act=gloryMore]")?.addEventListener("click", () => {
     state.gloryAll = !state.gloryAll; renderMe();
   });
-  box.querySelector("[data-act=saveReward]").addEventListener("click", async () => {
+  box.querySelector("[data-act=logout]")?.addEventListener("click", async () => {
+    try { await api("/api/logout", { method: "POST" }); } catch (e) {}
+    state.role = null;
+    showLogin();
+  });
+  if (state.role === "child") return;   // ↓↓ 以下均为家长专属控件的绑定
+  box.querySelector("[data-act=saveReward]")?.addEventListener("click", async () => {
     try { await api("/api/settings", { method: "PUT", body: { reward_rule: $("#rewardRule").value } });
       state.meta = await api("/api/meta"); toast("兑换规则已保存"); }
     catch (e) { toast(e.message); }
@@ -1075,6 +1414,18 @@ async function renderMe() {
   box.querySelector("#verifyTog").addEventListener("change", async e => {
     try { await api("/api/settings", { method: "PUT", body: { verify_enabled: e.target.checked } });
       state.meta = await api("/api/meta"); toast(e.target.checked ? "已开启防放水抽查" : "已关闭抽查"); }
+    catch (err) { toast(err.message); }
+  });
+  box.querySelector("#hintTog").addEventListener("change", async e => {
+    try { await api("/api/settings", { method: "PUT", body: { ai_hint_enabled: e.target.checked } });
+      state.meta = await api("/api/meta");
+      toast(e.target.checked ? "AI 复习提示已开启" : "AI 复习提示已关闭"); }
+    catch (err) { toast(err.message); }
+  });
+  box.querySelector("#variantTog").addEventListener("change", async e => {
+    try { await api("/api/settings", { method: "PUT", body: { variant_gate: e.target.checked } });
+      state.meta = await api("/api/meta");
+      toast(e.target.checked ? "变式题需家长预审后放行" : "变式题生成后直接向孩子开放"); }
     catch (err) { toast(err.message); }
   });
   box.querySelector("[data-act=newTerm]").addEventListener("click", () => {
@@ -1096,8 +1447,8 @@ async function renderMe() {
       } catch (e) { toast(e.message); }
     };
   });
-  box.querySelector("[data-act=chgCode]").addEventListener("click", () => {
-    openModal(`<h3>修改访问码</h3>
+  box.querySelector("[data-act=chgCode]")?.addEventListener("click", () => {
+    openModal(`<h3>修改家长访问码</h3>
       <div class="field-label">旧访问码</div><input class="input" id="ocOld" type="password">
       <div class="field-label">新访问码（6~12 位数字或字母）</div><input class="input" id="ocNew" type="password">
       <div class="m-acts"><button class="btn btn-ghost" data-act="closeModal">取消</button>
@@ -1106,20 +1457,29 @@ async function renderMe() {
       try {
         await api("/api/settings", { method: "PUT", body: {
           old_access_code: $("#ocOld").value.trim(), new_access_code: $("#ocNew").value.trim() } });
-        closeModal(); toast("访问码已修改，新设备用新码登录");
+        closeModal(); toast("家长访问码已修改，新设备用新码登录");
       } catch (e) { toast(e.message); }
     };
   });
-  box.querySelector("[data-act=backupNow]").addEventListener("click", async () => {
+  box.querySelector("[data-act=chgChildCode]")?.addEventListener("click", () => {
+    openModal(`<h3>修改孩子访问码</h3>
+      <p class="confirm-text">孩子设备用它登录，只能看到复习界面。修改后，孩子设备下次登录需用新码（当前已登录的设备不受影响）。</p>
+      <div class="field-label">新的孩子访问码（6~12 位数字或字母）</div><input class="input" id="ccNew" type="password">
+      <div class="m-acts"><button class="btn btn-ghost" data-act="closeModal">取消</button>
+      <button class="btn btn-brand" id="ccGo">保存</button></div>`);
+    $("#ccGo").onclick = async () => {
+      try {
+        await api("/api/settings", { method: "PUT", body: { new_child_code: $("#ccNew").value.trim() } });
+        closeModal(); toast("孩子访问码已修改");
+      } catch (e) { toast(e.message); }
+    };
+  });
+  box.querySelector("[data-act=backupNow]")?.addEventListener("click", async () => {
     try { await api("/api/backup", { method: "POST" }); toast("备份完成 ✅"); renderMe(); }
     catch (e) { toast(e.message); }
   });
-  box.querySelector("[data-act=dlBackup]").addEventListener("click", () =>
+  box.querySelector("[data-act=dlBackup]")?.addEventListener("click", () =>
     window.open("/api/backup/latest/download", "_blank"));
-  box.querySelector("[data-act=logout]").addEventListener("click", async () => {
-    try { await api("/api/logout", { method: "POST" }); } catch (e) {}
-    showLogin();
-  });
 }
 
 /* ================= 启动 ================= */

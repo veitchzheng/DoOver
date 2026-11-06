@@ -130,6 +130,36 @@ main{max-width:760px;margin:0 auto;padding:16px 16px 8px}
 .judge-row{display:flex;gap:10px;margin-top:14px}
 .judge-row .btn{flex:1;font-size:14px;padding:13px 4px;line-height:1.35;min-height:48px}
 .judge-note{display:flex;align-items:center;justify-content:space-between;margin-top:12px}
+
+/* ---------- AI 错题分析 ---------- */
+.ai-box{margin-top:10px;background:linear-gradient(150deg,#F4F1FF,#EAF5FF);
+  border:1px solid #DCD4FF;border-radius:14px;padding:10px 12px;font-size:13.5px;
+  display:flex;flex-direction:column;gap:6px}
+.ai-row{display:flex;gap:8px;line-height:1.55}
+.ai-row>span:last-child{flex:1}
+.ai-k{flex:none;font-weight:800;color:#6C5CE7}
+.ai-src{font-size:11.5px;color:var(--ink2)}
+.ai-pending{color:#6C5CE7;font-weight:700}
+.ai-fail{color:#C0392B}
+.ai-none{color:var(--ink2)}
+.hint-btn{width:100%;margin-bottom:10px;padding:11px;font-size:14px}
+.ai-sug{flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px}
+.sug-chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #DCD4FF;
+  border-radius:999px;padding:4px 10px;font-size:12.5px;font-weight:600}
+.sug-chip b{color:#6C5CE7;cursor:pointer;text-decoration:underline dotted;white-space:nowrap}
+.pv-photo{display:flex;gap:10px;align-items:flex-start}
+.pv-thumb{width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid var(--line);
+  cursor:pointer;flex:none;background:#F6EFE4}
+.pv-lines{flex:1;font-size:13px;line-height:1.55;display:flex;flex-direction:column;gap:3px;min-width:0}
+.pv-q{color:var(--ink);white-space:pre-line;font-weight:600}
+.pv-dim{color:var(--ink2);font-weight:400;font-size:12px}
+.photo-view{display:flex;justify-content:center;align-items:center;cursor:zoom-out}
+.photo-view img{max-width:100%;max-height:74vh;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.18)}
+.variant-banner{background:linear-gradient(135deg,#FFF4E0,#FFE9C7);border:1px solid #FFD79A;
+  border-radius:14px;padding:10px 14px;margin-bottom:10px;font-size:13.5px;font-weight:700;
+  color:#B45309;cursor:pointer;text-align:center}
+.ch-row{display:flex;align-items:center;justify-content:space-between;padding:10px 2px;
+  border-bottom:1px solid var(--line);font-size:14px}
 .toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;
   font-weight:700;color:var(--ink2);user-select:none}
 .toggle input{display:none}

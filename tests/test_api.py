@@ -12,7 +12,7 @@ import backup as backup_mod
 import db
 import engine
 import server
-from conftest import TEST_CODE
+from conftest import TEST_CODE, CHILD_CODE
 
 
 @pytest.fixture(scope="module")
@@ -384,3 +384,67 @@ def test_backup_verify_and_restore(client):
         assert any(n.startswith("photos/") for n in names)
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---------- 家长/孩子分端隔离 ----------
+
+def test_parent_role_meta(client):
+    meta = client.get("/api/meta").json()
+    assert meta["role"] == "parent"
+
+
+def test_child_login_and_isolation(client):
+    """孩子码登录 → 仅复习相关接口；家长接口一律 403"""
+    with TestClient(server.app) as c:
+        r = c.post("/api/login", json={"code": CHILD_CODE})
+        assert r.status_code == 200 and r.json()["role"] == "child"
+        meta = c.get("/api/meta").json()
+        assert meta["role"] == "child"
+        # 孩子可用：今日、我的、meta、判定、提示、单题
+        assert c.get("/api/today").status_code == 200
+        assert c.get("/api/me").status_code == 200
+        assert c.get("/api/llm/status").status_code == 200
+        # 家长专属：越权全部 403（后端硬隔离，不依赖 UI 隐藏）
+        assert c.post("/api/items", json={
+            "subject": "chinese", "prompt": "p", "wrong_text": "x",
+            "correct_text": "y"}).status_code == 403
+        assert c.get("/api/items").status_code == 403
+        assert c.get("/api/stats").status_code == 403
+        assert c.put("/api/settings", json={"daily_limit": 5}).status_code == 403
+        assert c.post("/api/backup").status_code == 403
+        assert c.post("/api/export/pdf", json={"template": "collection"}).status_code == 403
+        assert c.post("/api/review/1/verify", json={"approve": True}).status_code == 403
+        assert c.post("/api/items/1/analyze").status_code == 403
+        assert c.delete("/api/items/1").status_code == 403
+
+
+def test_child_can_review_but_not_manage(client):
+    """孩子能正常做题判定（核心场景），但不能改题/删题"""
+    r = client.post("/api/items", json={   # 家长录入
+        "subject": "chinese", "prompt": "zhì", "wrong_text": "志", "correct_text": "治"})
+    iid = r.json()["id"]
+    _force_due(iid)
+    with TestClient(server.app) as c:
+        c.post("/api/login", json={"code": CHILD_CODE})
+        body = {"result": "pass", "judged_by": "child"}
+        r2 = c.post(f"/api/items/{iid}/review", json=body)
+        assert r2.status_code == 200                       # 判定是孩子的主操作
+        assert r2.json()["item"]["stage"] == 1
+        assert c.patch(f"/api/items/{iid}", json={"solution": "改"}).status_code == 403
+
+
+def test_child_code_management(client):
+    """家长可改孩子码；改后旧码失效、新码可用"""
+    r = client.put("/api/settings", json={"new_child_code": "999888"})
+    assert r.status_code == 200
+    with TestClient(server.app) as c:
+        assert c.post("/api/login", json={"code": CHILD_CODE}).status_code == 401   # 旧码失效
+        assert c.post("/api/login", json={"code": "999888"}).json()["role"] == "child"
+    # 还原，避免影响其他用例
+    client.put("/api/settings", json={"new_child_code": CHILD_CODE})
+
+
+def test_parent_code_unchanged_for_existing_install(client):
+    """升级兼容：原访问码继续作为家长码使用"""
+    r = client.post("/api/login", json={"code": TEST_CODE})
+    assert r.status_code == 200 and r.json()["role"] == "parent"

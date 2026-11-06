@@ -13,7 +13,9 @@ import server  # noqa: E402
 db.init_db()
 conn = db.get_conn()
 db.settings_set(conn, "access_code_hash", auth.hash_code("123456"))
+db.settings_set(conn, "child_code_hash", auth.hash_code("111111"))
 conn.commit()
 conn.close()
 
 TEST_CODE = "123456"
+CHILD_CODE = "111111"

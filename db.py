@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 from datetime import datetime
 
-from config import CODE_FILE, DATA_DIR, SECRET_FILE, ensure_dirs
+from config import CHILD_CODE_FILE, CODE_FILE, DATA_DIR, SECRET_FILE, ensure_dirs
 
 DB_PATH = DATA_DIR / "doover.db"
 
@@ -37,7 +37,16 @@ CREATE TABLE IF NOT EXISTS items (
   status TEXT NOT NULL DEFAULT 'reviewing' CHECK(status IN ('reviewing','paused','mastered')),
   term TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  mastered_at TEXT
+  mastered_at TEXT,
+  question_text TEXT,
+  ai_points TEXT,
+  ai_pitfalls TEXT,
+  ai_hints TEXT,
+  ai_reason_suggest TEXT,
+  ai_kp_suggest TEXT,
+  ai_status TEXT CHECK(ai_status IS NULL OR ai_status IN ('pending','done','failed')),
+  ai_model TEXT,
+  ai_error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_items_due ON items(status, due_date);
 CREATE INDEX IF NOT EXISTS idx_items_subject ON items(subject, status);
@@ -68,6 +77,21 @@ CREATE TABLE IF NOT EXISTS star_ledger (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_star_date ON star_ledger(created_at);
+CREATE TABLE IF NOT EXISTS variants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  kp_id INTEGER,
+  subject TEXT NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  model TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved')),
+  used INTEGER NOT NULL DEFAULT 0,
+  result TEXT CHECK(result IS NULL OR result IN ('pass','fail')),
+  created_at TEXT NOT NULL,
+  judged_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_variant_item ON variants(item_id);
 """
 
 # 三、四年级常用知识点预置
@@ -103,10 +127,33 @@ def load_secret() -> str:
     return secret
 
 
+# 老库升级：items 表新增列（AI 错题分析）。CREATE TABLE IF NOT EXISTS 不会给已有表加列，
+# 这里逐一比对补齐，老数据全部保留。
+ITEM_AI_COLUMNS = {
+    "question_text": "TEXT",
+    "ai_points": "TEXT",
+    "ai_pitfalls": "TEXT",
+    "ai_hints": "TEXT",
+    "ai_reason_suggest": "TEXT",
+    "ai_kp_suggest": "TEXT",
+    "ai_status": "TEXT",
+    "ai_model": "TEXT",
+    "ai_error": "TEXT",
+}
+
+
+def migrate(conn):
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(items)")}
+    for name, decl in ITEM_AI_COLUMNS.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE items ADD COLUMN {name} {decl}")
+
+
 def init_db():
     ensure_dirs()
     conn = get_conn()
     conn.executescript(SCHEMA)
+    migrate(conn)
     conn.execute("PRAGMA journal_mode=WAL")
     seed_kps(conn)
     init_settings(conn)
@@ -126,6 +173,8 @@ def init_settings(conn):
     defaults = {
         "daily_limit": "8",
         "verify_enabled": "true",
+        "ai_hint_enabled": "true",
+        "variant_gate": "true",
         "current_term": "三年级上",
         "reward_rule": "20 颗星 = 周末选一部电影；50 颗星 = 实现一个小愿望",
     }
@@ -144,6 +193,20 @@ def init_settings(conn):
             "本文件仅提示用，改码后可删除。\n", encoding="utf-8")
         CODE_FILE.chmod(0o600)
         print(f"[DoOver] 首次安装已生成访问码，见 {CODE_FILE}  →  {code}")
+    # 家长/孩子双端分离：孩子码独立生成，孩子设备用它登录只能进复习界面。
+    # 升级兼容：已有安装首次升级时生成孩子码，明文提示文件同目录存放。老访问码即家长码。
+    if settings_get(conn, "child_code_hash") is None:
+        secret = load_secret()
+        code = "".join(secrets.choice("0123456789") for _ in range(6))
+        conn.execute("INSERT INTO settings(key, value) VALUES(?,?)",
+                     ("child_code_hash", hashlib.sha256((secret + code).encode()).hexdigest()))
+        CHILD_CODE_FILE.write_text(
+            f"DoOver 错题本 · 孩子访问码：{code}\n\n"
+            "孩子设备用此码登录，只能看到复习界面（今日 + 我的星星页），\n"
+            "无法录题/删除/改设置；家长管理请在家长设备输入家长码登录。\n"
+            "可在「我的 → 设置」修改。本文件仅提示用，改码后可删除。\n", encoding="utf-8")
+        CHILD_CODE_FILE.chmod(0o600)
+        print(f"[DoOver] 已生成孩子访问码，见 {CHILD_CODE_FILE}  →  {code}")
 
 
 def settings_get(conn, key, default=None):

@@ -17,22 +17,24 @@ def _secret() -> bytes:
     return _SECRET
 
 
-def make_token(exp_days: int = SESSION_DAYS) -> str:
+def make_token(role: str = "parent", exp_days: int = SESSION_DAYS) -> str:
     exp = int(time.time()) + exp_days * 86400
-    sig = hmac.new(_secret(), str(exp).encode(), hashlib.sha256).hexdigest()
-    return f"{exp}.{sig}"
+    payload = f"{exp}.{role}"
+    sig = hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
 
 
-def check_token(token: str) -> bool:
+def check_token(token: str):
+    """验证会话；有效返回身份（'parent'/'child'），无效返回 None"""
     try:
-        exp_str, sig = token.split(".", 1)
+        exp_str, role, sig = token.split(".")
         exp = int(exp_str)
     except (ValueError, AttributeError):
-        return False
-    if exp < time.time():
-        return False
-    expect = hmac.new(_secret(), exp_str.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(sig, expect)
+        return None
+    if role not in ("parent", "child") or exp < time.time():
+        return None
+    expect = hmac.new(_secret(), f"{exp_str}.{role}".encode(), hashlib.sha256).hexdigest()
+    return role if hmac.compare_digest(sig, expect) else None
 
 
 def hash_code(code: str) -> str:

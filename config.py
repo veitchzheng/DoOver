@@ -10,6 +10,7 @@ BACKUP_DIR = DATA_DIR / "backups"
 EXPORT_DIR = DATA_DIR / "exports"
 SECRET_FILE = DATA_DIR / "secret.key"
 CODE_FILE = DATA_DIR / "初始访问码.txt"
+CHILD_CODE_FILE = DATA_DIR / "孩子访问码.txt"
 
 HOST = os.environ.get("DOOVER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DOOVER_PORT", "8200"))
