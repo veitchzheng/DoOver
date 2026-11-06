@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小学错题本（DoOver）产品设计文档</title>
+<style>
+/* ========== Reset & Base ========== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { min-height: 100%; }
+body {
+  position: relative;
+  font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", "Noto Sans SC", sans-serif;
+  color: #134e4a;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 40px 24px;
+  background: linear-gradient(160deg, #f5fcfa 0%, #ffffff 45%, #c3e8db 100%);
+  min-height: 100vh;
+}
+/* 全局光斑：两个白色 radial 光晕，营造页面呼吸感（纯装饰，转换时忽略） */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 45% 35% at 12% 8%, rgba(255,255,255,0.55) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 30% at 88% 90%, rgba(255,255,255,0.45) 0%, transparent 55%);
+}
+body > * { position: relative; z-index: 1; }
+
+/* ========== 封面 Hero（深色渐变 + 光斑 + 白字） ========== */
+.title {
+  position: relative;
+  overflow: hidden;
+  padding: 56px 40px;
+  text-align: center;
+  background: linear-gradient(135deg, #0f766e 0%, #14b8a6 50%, #2dd4bf 100%);
+  color: #ffffff;
+  border-radius: 16px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+}
+.title::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 18% 82%, rgba(255,255,255,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 40% at 82% 18%, rgba(255,255,255,0.08) 0%, transparent 55%);
+  pointer-events: none;
+}
+.title > * { position: relative; z-index: 1; }
+.title h1 { font-size: 28px; font-weight: 800; margin: 0 0 14px 0; letter-spacing: 1px; color: #ffffff; }
+.title .accent-line {
+  width: 48px; height: 3px; background: rgba(255,255,255,0.85);
+  margin: 0 auto 18px; border-radius: 2px;
+}
+.title p { font-size: 15px; color: rgba(255,255,255,0.85); margin: 0; line-height: 1.7; }
+
+/* ========== 章节标题 ========== */
+h1.heading {
+  font-size: 28px;
+  color: #0e6b57;
+  margin: 36px 0 16px 0;
+  font-weight: 700;
+  border-left: 4px solid #14b8a6;
+  padding-left: 16px;
+}
+h2.heading {
+  font-size: 22px;
+  color: #0e6b57;
+  margin: 28px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #bfe3d8;
+  font-weight: 600;
+}
+
+/* ========== 正文 / 列表 ========== */
+.paragraph { font-size: 15px; color: #134e4a; line-height: 1.8; margin: 0 0 16px 0; text-indent: 2em; }
+.paragraph.no-indent { text-indent: 0; }
+.list { margin: 0 0 16px 0; padding-left: 24px; font-size: 15px; color: #134e4a; line-height: 1.8; }
+.list li { margin-bottom: 8px; }
+.list li::marker { color: #14b8a6; }
+
+/* ========== 正文区卡片化容器 ========== */
+.doc-section {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 24px 28px;
+  margin: 0 0 16px 0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+.doc-section.alt { background: #e2f4ee; box-shadow: none; }
+
+/* ========== callout ========== */
+.callout {
+  margin: 0 0 16px 0;
+  padding: 16px 24px;
+  background: #e0f7f3;
+  border-left: 4px solid #14b8a6;
+  border-radius: 8px;
+}
+.callout[data-variant="warning"] { background: #FFF3E0; border-left-color: #d97706; }
+.callout[data-variant="quote"]   { background: #f0fdfa; border-left-color: #14b8a6; }
+.callout p { font-size: 15px; color: #134e4a; margin: 0; line-height: 1.8; }
+
+/* ========== 表格 ========== */
+.table-wrap {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+  overflow: hidden;
+  margin: 0 0 16px 0;
+}
+.table-caption {
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #bfe3d8, #e0f7f3);
+  color: #0e6b57;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 1px solid #cdeee7;
+}
+table.table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
+table.table thead th {
+  padding: 12px 16px;
+  text-align: left;
+  background: #bfe3d8;
+  color: #0e6b57;
+  font-weight: 700;
+  border-bottom: 2px solid #cdeee7;
+  word-break: break-word;
+}
+table.table tbody td { padding: 12px 16px; border-bottom: 1px solid #cdeee7; color: #134e4a; word-break: break-word; }
+table.table tbody tr:last-child td { border-bottom: none; }
+table.table tbody tr:hover { background: #e0f7f3; }
+
+/* ========== stat ========== */
+.stat-grid { display: flex; gap: 16px; margin: 0 0 16px 0; }
+.stat {
+  flex: 1;
+  text-align: center;
+  padding: 24px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  border-top: 3px solid #14b8a6;
+}
+.stat .num { font-size: 28px; color: #14b8a6; font-weight: 800; line-height: 1.1; }
+.stat .label { font-size: 12px; color: #5b8a85; margin-top: 6px; }
+
+/* ========== timeline ========== */
+.timeline { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.timeline li {
+  position: relative;
+  padding-left: 28px;
+  padding-bottom: 18px;
+  border-left: 2px solid #e0f7f3;
+  margin-left: 6px;
+}
+.timeline li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.timeline li::before {
+  content: '';
+  position: absolute;
+  left: -7px; top: 5px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #14b8a6;
+  border: 2px solid #f1faf7;
+  box-shadow: 0 0 0 2px #e0f7f3;
+}
+.timeline strong { font-size: 14px; color: #14b8a6; }
+.timeline p { font-size: 15px; color: #134e4a; margin: 4px 0 0 0; line-height: 1.8; }
+
+/* ========== code ========== */
+.code {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 16px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-x: auto;
+  margin: 0 0 16px 0;
+  font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', 'Source Code Pro', Consolas, monospace;
+}
+
+/* ========== card ========== */
+.card-grid { display: flex; gap: 16px; margin: 0 0 16px 0; }
+.card {
+  flex: 1;
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  border-top: 3px solid #14b8a6;
+}
+.card h3 { font-size: 18px; color: #0e6b57; margin: 0 0 8px 0; font-weight: 700; }
+.card p  { font-size: 14px; color: #5b8a85; margin: 0; line-height: 1.7; }
+
+/* ========== divider: 章节饰线 ========== */
+.divider { margin: 32px 0; text-align: center; user-select: none; }
+.divider .line {
+  display: inline-block;
+  width: 36px;
+  height: 1px;
+  vertical-align: middle;
+  background: linear-gradient(to right, transparent, #e0f7f3);
+}
+.divider .line:last-child { background: linear-gradient(to left, transparent, #e0f7f3); }
+.divider .diamond {
+  display: inline-block;
+  width: 8px; height: 8px;
+  margin: 0 12px;
+  vertical-align: middle;
+  transform: rotate(45deg);
+  background: #14b8a6;
+  border-radius: 1px;
+  box-shadow: 0 0 0 2px #f1faf7;
+}
+
+/* ========== 尾页 ========== */
+.end_page {
+  margin-top: 24px;
+  padding: 56px 24px;
+  text-align: center;
+  background: linear-gradient(135deg, #bfe3d8 0%, #e0f7f3 100%);
+  border-radius: 16px;
+}
+.end_page h1 { font-size: 28px; color: #0e6b57; margin: 0 0 16px 0; font-weight: 800; }
+.end_page p  { font-size: 15px; color: #5b8a85; margin: 0; line-height: 1.8; }
+
+/* ========== 响应式 ========== */
+@media screen and (max-width: 600px) {
+  body { padding: 16px !important; }
+  h1 { font-size: 22px !important; }
+  h2 { font-size: 18px !important; }
+  h3 { font-size: 16px !important; }
+  .stat-grid, .card-grid { flex-direction: column; }
+}
+
+/* ========== 打印优化 ========== */
+@media print {
+  body {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #f1faf7;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body::before { display: none; }
+  .title, .end_page { border-radius: 0; box-shadow: none; }
+  .doc-section, .card, .stat, .table-wrap { box-shadow: none; border: 1px solid #cdeee7; }
+  section { break-inside: auto !important; }
+}
+</style>
+</head>
+<body class="mode-doc" data-palette="teal">
+
+  <!-- ===== 封面 ===== -->
+  <section class="title">
+    <h1>小学错题本（DoOver）产品设计文档</h1>
+    <div class="accent-line"></div>
+    <p>错题本，小题大做 —— V1.0 · 2026 年 11 月 6 日 · 面向三、四年级 · 数学 / 语文 / 英语三科 · 家庭局域网部署</p>
+  </section>
+
+  <!-- ===== 一、产品概述 ===== -->
+  <h1 class="heading" data-level="1">一、产品概述</h1>
+
+  <div class="doc-section">
+    <p class="paragraph">DoOver 是一个部署在家庭局域网内的错题管理系统，供三、四年级孩子与家长协作使用。核心理念：<strong>错题本的价值不在"收集错题"，而在"错过的题不再错"</strong>。围绕这一目标，产品解决传统纸质错题本的三大顽疾：</p>
+  </div>
+
+  <div class="card-grid" data-cols="3">
+    <div class="card">
+      <h3>抄题费时间</h3>
+      <p>拍照即录入，错字词走三件套表单，30 秒一道题，家长告别手抄。</p>
+    </div>
+    <div class="card">
+      <h3>复习靠自觉</h3>
+      <p>艾宾浩斯间隔引擎自动排期，每天只推到期题，记完吃灰成为历史。</p>
+    </div>
+    <div class="card">
+      <h3>越积越厚</h3>
+      <p>五档通过即"消灭"，消灭的题进光荣榜，错题本越用越薄。</p>
+    </div>
+  </div>
+
+  <aside class="callout" data-variant="tip">
+    <p><strong>核心闭环：收集 → 归因 → 间隔重练 → 消灭。</strong>每一步都为下一步服务：录入时三秒归因，复习时翻面对照，判定驱动排期，消灭驱动激励。</p>
+  </aside>
+
+  <div class="stat-grid" data-cols="4">
+    <div class="stat">
+      <div class="num">30 秒</div>
+      <div class="label">单题录入耗时</div>
+    </div>
+    <div class="stat">
+      <div class="num">≤10 分钟</div>
+      <div class="label">每日复习时长</div>
+    </div>
+    <div class="stat">
+      <div class="num">5 档</div>
+      <div class="label">间隔复习（1/3/7/15/30 天）</div>
+    </div>
+    <div class="stat">
+      <div class="num">0 条</div>
+      <div class="label">数据外发（仅局域网）</div>
+    </div>
+  </div>
+
+  <div class="doc-section alt">
+    <p class="paragraph">产品按三、四年级实现：孩子识字量足够，可独立完成复习与自评，家长负责录入与抽查。低年级使用时可降级为"家长代录 + 陪同复习"，高年级可"自录自查"，知识点库支持按年级切换，界面无需改动。</p>
+  </div>
+
+  <!-- ===== 二、用户角色与使用节奏 ===== -->
+  <h1 class="heading" data-level="1">二、用户角色与使用节奏</h1>
+
+  <div class="table-wrap">
+    <div class="table-caption">角色分工</div>
+    <table class="table" data-caption="角色分工">
+      <colgroup><col style="width:18%"><col style="width:62%"><col style="width:20%"></colgroup>
+      <thead>
+        <tr><th>角色</th><th>职责</th><th>主要页面</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>孩子（复习者）</td><td>独立完成每日复习：看题、纸上演算、翻面对照、三键自评；赚星星、收集勋章</td><td>今日、我的</td></tr>
+        <tr><td>家长（教练）</td><td>拍照录入与归因标注、抽查复核待判定题、查看统计、导出 PDF、管理设置与备份</td><td>全部页面</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <p class="paragraph no-indent"><strong>一周典型节奏：</strong></p>
+    <ol class="timeline">
+      <li>
+        <strong>周中 · 每晚作业后</strong>
+        <p>家长用手机把当天作业、卷子里的错题拍照录入，顺手选好知识点与错因，30 秒一道题。</p>
+      </li>
+      <li>
+        <strong>周中 · 睡前 10 分钟</strong>
+        <p>孩子打开「今日」，一题一卡，纸上演算、翻面对照、三键判定，全部通过即收工。</p>
+      </li>
+      <li>
+        <strong>周五晚</strong>
+        <p>家长勾选本周错题，导出「重练卷」PDF 打印，周末纸质重练。</p>
+      </li>
+      <li>
+        <strong>周末</strong>
+        <p>孩子做重练卷；顽固题由家长坐下来讲透，而不是机械重刷。</p>
+      </li>
+      <li>
+        <strong>学期末</strong>
+        <p>导出「收藏本」归档留存；光荣榜保留，新学期错题从零开始。</p>
+      </li>
+    </ol>
+  </div>
+
+  <!-- ===== 三、功能设计 ===== -->
+  <h1 class="heading" data-level="1">三、功能设计</h1>
+
+  <h2 class="heading" data-level="2">3.1 整体结构：五个页面</h2>
+
+  <div class="table-wrap">
+    <div class="table-caption">页面结构</div>
+    <table class="table" data-caption="页面结构">
+      <colgroup><col style="width:14%"><col style="width:18%"><col style="width:68%"></colgroup>
+      <thead>
+        <tr><th>Tab</th><th>主要使用者</th><th>核心功能</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>今日</td><td>孩子</td><td>到期复习，一题一卡，三键判定，星星反馈</td></tr>
+        <tr><td>错题本</td><td>家长</td><td>全量列表、筛选、编辑归因、暂停/复活/删除、导出 PDF</td></tr>
+        <tr><td>加题</td><td>家长</td><td>照片题 / 错字词双形态录入</td></tr>
+        <tr><td>统计</td><td>家长</td><td>薄弱知识点、错因占比、消灭进度、待复核清单</td></tr>
+        <tr><td>我的</td><td>共用</td><td>星星、勋章、光荣榜、奖励规则、设置、备份</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <p class="paragraph no-indent"><strong>「今日」页的复习流程（孩子端核心交互）：</strong></p>
+    <ul class="list">
+      <li>看题 → 纸上演算 → 点「我想好了」→ 翻面对照 → 三键自评 → 自动下一题，底部进度条见底收工。</li>
+      <li>翻面显示题目照片、正确做法与归因备注；未录答案的题显示「请家长判定」，由家长按键。</li>
+      <li>错字词翻面为对照视图：孩子错写与正确写法并排，差异字符红色标出。</li>
+      <li>无到期题时空态文案为「今天没有任务，去玩吧」——不派无谓的活。</li>
+      <li>界面采用<strong>小怪兽卡通风</strong>：错题即小怪兽，消灭一题得星星，全程正向反馈。</li>
+    </ul>
+  </div>
+
+  <h2 class="heading" data-level="2">3.2 录入：双形态，30 秒一道题</h2>
+
+  <div class="card-grid" data-cols="2">
+    <div class="card">
+      <h3>形态 A · 照片题</h3>
+      <p>拍照 → 拖框裁剪出这一道题 → 选科目 / 知识点 / 错因，完成。可选补录错误答案（如"写成 47"）与正确做法一句话。适用于数学题、语文阅读题、英语句型题。支持同一张卷子连拍多题批量录入。</p>
+    </div>
+    <div class="card">
+      <h3>形态 B · 错字词</h3>
+      <p>不拍照，表单三件套：提示项（拼音 / 中文）+ 孩子错写 + 正确写法。语文示例：zhì → 写成"志" → 正确"治"；英语示例：中文"星期三" → 写成 Wensday → 正确 Wednesday。复习时自动转为默写重考，一次听写错 10 个字，10 秒录完。</p>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-caption">错误原因四分类（录入时三秒选一）</div>
+    <table class="table" data-caption="错误原因四分类">
+      <colgroup><col style="width:15%"><col style="width:42%"><col style="width:43%"></colgroup>
+      <thead>
+        <tr><th>错误原因</th><th>典型表现</th><th>干预策略</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>概念不会</td><td>知识点没掌握，讲解后能懂</td><td>回归课本补讲解，重做同类型题</td></tr>
+        <tr><td>审题马虎</td><td>看错条件、漏看单位、"比多"看成"比少"</td><td>抓审题习惯：圈关键词、指读题干</td></tr>
+        <tr><td>计算失误</td><td>会做但算错，进位退位出错</td><td>限时口算训练，养成验算习惯</td></tr>
+        <tr><td>完全没思路</td><td>无从下手，翻面也看不懂</td><td>标记顽固题，家长或老师专题讲解</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <aside class="callout" data-variant="tip">
+    <p><strong>错因是整个错题本的灵魂。</strong>马虎和不会的干预方式完全不同：马虎要抓习惯，不会要补知识。统计页给出占比后，家长立刻知道该补习惯还是补知识。</p>
+  </aside>
+
+  <div class="doc-section">
+    <p class="paragraph no-indent"><strong>知识点库：</strong>三科预置三、四年级常用知识点——数学：两位数乘除、周长面积、分数初步、应用题；语文：形近字、多音字、近反义词、阅读理解；英语：单词拼写、时态、句型。支持自定义追加，可按年级切换。录入时常用项优先展示。</p>
+  </div>
+
+  <h2 class="heading" data-level="2">3.3 复习引擎（核心）</h2>
+
+  <div class="doc-section">
+    <p class="paragraph">每道错题是一个小状态机，四个状态量：<strong>阶段（0~5）、下次到期日、错次、状态（复习中 / 顽固 / 已消灭 / 暂停）</strong>。录入次日进入第 1 档，间隔序列 <strong>1 → 3 → 7 → 15 → 30 天</strong>，通过第 5 档即消灭。节奏与艾宾浩斯遗忘曲线一致。</p>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-caption">判定规则与星星</div>
+    <table class="table" data-caption="判定规则与星星">
+      <colgroup><col style="width:34%"><col style="width:50%"><col style="width:16%"></colgroup>
+      <thead>
+        <tr><th>判定</th><th>状态变化</th><th>星星</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>✅ 独立做对</td><td>阶段 +1，按新档间隔排期</td><td>+1</td></tr>
+        <tr><td>⚠️ 提示后才对</td><td>阶段不变，次日再考</td><td>0</td></tr>
+        <tr><td>❌ 又错</td><td>归零回 1 天档，错次 +1</td><td>0</td></tr>
+        <tr><td>通过第 5 档（消灭）</td><td>进光荣榜，不再排期</td><td>+5</td></tr>
+        <tr><td>当日清单全部通过</td><td>—</td><td>+2</td></tr>
+        <tr><td>顽固题逆袭消灭</td><td>错次 ≥3 的题最终消灭</td><td>+10</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <ul class="list">
+      <li><strong>每日上限：</strong>默认 8 道（可调 3~15），到期超额自动排队到后面几天，不给孩子堆量。</li>
+      <li><strong>断更不惩罚：</strong>几天没打开，到期题堆叠，但依然按上限逐日消化。</li>
+      <li><strong>顽固题：</strong>错次 ≥3 自动标记，清单置顶、统计页高亮，提示家长该停下来讲，而不是机械重刷。</li>
+      <li><strong>消灭之后：</strong>默认不再出现；家长可手动「再考一次」，期末可批量复活抽查。</li>
+      <li><strong>防放水（默认开）：</strong>孩子按的 ✅ 标「待复核」，家长抽查通过才转正；三四年级自评基本可信，但威慑要有，可在设置中关闭。</li>
+    </ul>
+  </div>
+
+  <h2 class="heading" data-level="2">3.4 PDF 导出：收藏本 + 重练卷双模板</h2>
+
+  <div class="doc-section">
+    <p class="paragraph no-indent"><strong>三步向导：</strong>① 选范围——按当前筛选（科目 / 知识点 / 状态 / 学期）直接导，或手动勾选，快捷组合含"本学期全部、顽固题专卷、已消灭归档"；② 选模板——收藏本或重练卷；③ 排版选项——按知识点分组（默认）或按时间、顽固题红色高亮置顶、整卷乱序。</p>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-caption">双模板对比</div>
+    <table class="table" data-caption="双模板对比">
+      <colgroup><col style="width:12%"><col style="width:45%"><col style="width:43%"></colgroup>
+      <thead>
+        <tr><th>维度</th><th>收藏本模板</th><th>重练卷模板</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>用途</td><td>归档翻阅、给辅导老师看、学期末留存</td><td>周末重练、考前自测</td></tr>
+        <tr><td>题块内容</td><td>题目 + 错误答案 + 错因分析 + 正确做法 + 复习状态</td><td>题目 + 10 行演算留白</td></tr>
+        <tr><td>错字词渲染</td><td>拼音 → 错写（红字删除线）→ 正写（绿色加粗）</td><td>田字格（语文生字）、四线三格（英语单词）供默写</td></tr>
+        <tr><td>答案位置</td><td>跟随各题块</td><td>集中末页，标注"沿虚线撕下"</td></tr>
+        <tr><td>页眉</td><td>统计摘要封面（收录 / 顽固 / 已消灭）</td><td>姓名、日期填写线</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section alt">
+    <ul class="list">
+      <li>A4 纵向；封面含科目、学期、统计摘要与生成日期。</li>
+      <li>题块不跨页（keep-together），顽固题红色边条高亮。</li>
+      <li>页脚页码；文件名自动生成，如：<code>错题本_数学_三年级上_20261106.pdf</code>。</li>
+      <li>体积可控：100 题带照片约 10~15MB。</li>
+      <li>此功能同时覆盖原定 V2 的"打印组卷"——重练卷模板即打印组卷，同一引擎。</li>
+    </ul>
+  </div>
+
+  <h2 class="heading" data-level="2">3.5 统计看板（家长端）</h2>
+
+  <div class="stat-grid" data-cols="4">
+    <div class="stat">
+      <div class="num">58</div>
+      <div class="label">收录错题</div>
+    </div>
+    <div class="stat">
+      <div class="num">41</div>
+      <div class="label">已消灭</div>
+    </div>
+    <div class="stat">
+      <div class="num">6</div>
+      <div class="label">顽固题</div>
+    </div>
+    <div class="stat">
+      <div class="num">71%</div>
+      <div class="label">消灭率</div>
+    </div>
+  </div>
+  <p class="paragraph no-indent" style="font-size:12px;color:#5b8a85;margin:-8px 0 16px 4px;">（以上为看板示意数据）</p>
+
+  <div class="doc-section">
+    <ul class="list">
+      <li><strong>薄弱知识点 TOP5：</strong>横条图直接告诉你周末补什么。</li>
+      <li><strong>错误原因占比：</strong>马虎型 vs 不会型，决定抓审题习惯还是补概念讲解。</li>
+      <li><strong>科目分布：</strong>三科错题量对比。</li>
+      <li><strong>待复核清单：</strong>孩子判的 ✅ 在此抽查。</li>
+      <li><strong>学期维度：</strong>期末一键归档，光荣榜保留，新学期从零开始；角标常驻"最近备份 x 小时前"，超 48 小时变黄提醒。</li>
+    </ul>
+  </div>
+
+  <h2 class="heading" data-level="2">3.6 激励系统：错题即小怪兽</h2>
+
+  <div class="doc-section">
+    <p class="paragraph no-indent"><strong>世界观：</strong>错题是小怪兽，做对就是消灭它。星星由系统按判定规则自动发放，勋章由复习日志推算，无需手工维护。</p>
+    <ul class="list">
+      <li><strong>勋章墙：</strong>初次胜利（消灭第 1 题）、坚持之星（连续复习 7 天）、怪兽猎人（累计消灭 10 题）、怪兽克星（累计消灭 50 题）、翻身仗（顽固题逆袭消灭）、三科通吃（数学 / 语文 / 英语各消灭 10 题）。</li>
+      <li><strong>光荣榜：</strong>被消灭的题按时间陈列为"战利品"，可回看题目与消灭日期。</li>
+      <li><strong>奖励兑换：</strong>规则由家长自定义，如"20 颗星 = 周末选一部电影"，写在「我的」页。</li>
+    </ul>
+  </div>
+
+  <!-- ===== 四、技术方案 ===== -->
+  <h1 class="heading" data-level="1">四、技术方案</h1>
+
+  <h2 class="heading" data-level="2">4.1 架构与数据目录</h2>
+
+  <pre class="code" data-lang="text"><code>手机（家长）── 拍照录入、错题管理
+平板（孩子）── 今日复习、三键判定
+电脑（家长）── 统计看板、导出 PDF、打印
+      │  家庭局域网 HTTP（HttpOnly Cookie 鉴权）
+      ▼
+DoOver 服务端（FastAPI 单进程）
+  · REST API   · 复习引擎   · PDF 生成   · APScheduler 定时备份
+      │
+      ▼
+data/ 数据目录（NAS 卷，备份的最小单元）
+  ├─ doover.db    SQLite 元数据，常年 &lt;10MB
+  ├─ photos/      题目原图（长边 1200px，约 150KB/张）
+  ├─ thumbs/      列表缩略图
+  └─ backups/     每日 03:30 自动备份 zip（保留 30 份）</code></pre>
+
+  <div class="doc-section">
+    <p class="paragraph">浏览器端零持久化：前端不存任何数据，打开即是服务端最新状态，彻底规避纯前端方案"照片堆在浏览器里越用越慢、清一次缓存全丢"的问题。三端数据天然共享，不依赖导出导入。</p>
+  </div>
+
+  <h2 class="heading" data-level="2">4.2 技术选型</h2>
+
+  <div class="table-wrap">
+    <div class="table-caption">技术选型（Python 栈）</div>
+    <table class="table" data-caption="技术选型（Python 栈）">
+      <colgroup><col style="width:15%"><col style="width:33%"><col style="width:52%"></colgroup>
+      <thead>
+        <tr><th>组件</th><th>选型</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Web 框架</td><td>FastAPI + uvicorn</td><td>自带 OpenAPI 文档与类型校验；单进程足够家用</td></tr>
+        <tr><td>数据库</td><td>SQLite（标准库 sqlite3，WAL 模式）</td><td>零中间件；无 ORM、SQL 全透明；库文件常年 &lt;10MB</td></tr>
+        <tr><td>图片处理</td><td>Pillow</td><td>上传时生成缩略图</td></tr>
+        <tr><td>PDF 生成</td><td>reportlab + 内嵌思源黑体</td><td>纯 Python 无系统依赖，容器友好；内嵌字体内防中文乱码</td></tr>
+        <tr><td>定时任务</td><td>APScheduler</td><td>每日自动备份、每月 VACUUM</td></tr>
+        <tr><td>前端</td><td>原生 HTML / JS 单页应用</td><td>无构建步骤，由 FastAPI 静态托管，浏览器直开</td></tr>
+        <tr><td>鉴权</td><td>访问码 → 签名 Cookie（HttpOnly）</td><td>API 与图片加载全覆盖，接口鉴权完整</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="heading" data-level="2">4.3 数据模型</h2>
+
+  <div class="table-wrap">
+    <div class="table-caption">数据表（6 张，其中两张为配置小表）</div>
+    <table class="table" data-caption="数据表（6 张，其中两张为配置小表）">
+      <colgroup><col style="width:24%"><col style="width:76%"></colgroup>
+      <thead>
+        <tr><th>表</th><th>关键字段</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>item（错题主表）</td><td>科目、题型（照片/错字词）、知识点 ID、错误原因、拼音提示、孩子错写、正确写法、错误答案备注、正确做法备注、阶段（0~5）、到期日、错次、状态、学期、创建时间</td></tr>
+        <tr><td>photo</td><td>item_id、原图路径、缩略图路径</td></tr>
+        <tr><td>review_log</td><td>item_id、判定结果（✅/⚠️/❌）、判定人、待复核标记、时间（只追加不修改）</td></tr>
+        <tr><td>star_ledger</td><td>事件类型、关联题 ID、星数、时间（勋章由日志推算，不另建表）</td></tr>
+        <tr><td>knowledge_point</td><td>科目、名称、内置标记（三、四年级预置）</td></tr>
+        <tr><td>settings</td><td>键、值（每日上限、复核开关、访问码、奖励规则、学期）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="heading" data-level="2">4.4 API 设计</h2>
+
+  <div class="table-wrap">
+    <div class="table-caption">API 清单（除 health 外全部需鉴权）</div>
+    <table class="table" data-caption="API 清单（除 health 外全部需鉴权）">
+      <colgroup><col style="width:13%"><col style="width:42%"><col style="width:45%"></colgroup>
+      <thead>
+        <tr><th>方法</th><th>路径</th><th>作用</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td>/api/login</td><td>访问码换取会话 Cookie</td></tr>
+        <tr><td>GET</td><td>/api/today</td><td>今日到期清单 + 连续复习天数</td></tr>
+        <tr><td>POST</td><td>/api/items</td><td>新增错题（照片 multipart / 错字词 JSON）</td></tr>
+        <tr><td>GET</td><td>/api/items</td><td>列表查询（科目 / 知识点 / 状态筛选 + 分页）</td></tr>
+        <tr><td>PATCH</td><td>/api/items/{id}</td><td>编辑归因、暂停、复活、再考一次</td></tr>
+        <tr><td>DELETE</td><td>/api/items/{id}</td><td>删除误录</td></tr>
+        <tr><td>POST</td><td>/api/items/{id}/review</td><td>提交判定（✅/⚠️/❌）</td></tr>
+        <tr><td>GET</td><td>/api/stats</td><td>数字卡、薄弱 TOP5、错因占比</td></tr>
+        <tr><td>GET</td><td>/api/me</td><td>星星、勋章、光荣榜</td></tr>
+        <tr><td>GET / PUT</td><td>/api/settings</td><td>每日上限、复核开关、奖励规则</td></tr>
+        <tr><td>POST</td><td>/api/export/pdf</td><td>生成 PDF，返回下载地址</td></tr>
+        <tr><td>POST</td><td>/api/backup</td><td>手动触发备份</td></tr>
+        <tr><td>GET</td><td>/api/health</td><td>健康检查（自检脚本用，免鉴权）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-section">
+    <p class="paragraph">图片经 <code>/photos/{id}</code> 静态路由访问，同样走 Cookie 鉴权；照片上传时服务端生成缩略图，列表页只取缩略图。</p>
+  </div>
+
+  <h2 class="heading" data-level="2">4.5 性能设计（防"越用越慢"）</h2>
+
+  <div class="doc-section">
+    <ul class="list">
+      <li><strong>上传前压缩：</strong>手机端先压至长边 1200px（约 150KB/张）再上传，局域网传输也快。</li>
+      <li><strong>缩略图策略：</strong>服务端 Pillow 生成缩略图，列表页只加载缩略图，翻面对照才加载原图。</li>
+      <li><strong>分页与索引：</strong>列表接口分页；到期日、科目 + 状态建索引。</li>
+      <li><strong>小库原则：</strong>照片是磁盘文件而非数据库 BLOB，SQLite 只存元数据，常年 &lt;10MB——几年量级下查询不退化。</li>
+      <li><strong>SQLite WAL：</strong>读写并发安全；APScheduler 每月自动 VACUUM 保持紧凑。</li>
+    </ul>
+  </div>
+
+  <!-- ===== 五、备份与数据安全 ===== -->
+  <h1 class="heading" data-level="1">五、备份与数据安全</h1>
+
+  <div class="doc-section">
+    <ul class="list">
+      <li><strong>每日自动备份：</strong>03:30 全量打包 db + photos + manifest（含版本号）为 zip，存 backups/，默认保留最近 30 份，滚动删除。</li>
+      <li><strong>手动一键备份：</strong>「我的」页常驻按钮，录完重要卷子随手按。</li>
+      <li><strong>备份自检：</strong>PRAGMA quick_check 校验库完整性、检查磁盘余量与最近备份年龄；/api/health 暴露给自检脚本，统计页角标超 48 小时变黄提醒。</li>
+      <li><strong>恢复极简：</strong>解压 zip 至 data/ 目录即完整还原；自检脚本带 --verify-backup 校验备份可用性。</li>
+      <li><strong>第二落盘（可选）：</strong>配置额外路径（NAS 其他卷 / 移动硬盘）双保险，配合 fnOS 自身快照兜底。</li>
+      <li><strong>鉴权与隐私：</strong>访问码登录、HttpOnly Cookie；全部数据与备份仅存家庭局域网，零外部上传——孩子的作业、笔迹、姓名不外流。</li>
+    </ul>
+  </div>
+
+  <aside class="callout" data-variant="warning">
+    <p><strong>主要风险提示：</strong>纯浏览器方案的风险（清缓存丢数据）已通过服务端架构消除；剩余风险是 NAS 磁盘损坏，靠"每日备份 + 第二落盘 + fnOS 快照"三层兜底。</p>
+  </aside>
+
+  <!-- ===== 六、部署与交付 ===== -->
+  <h1 class="heading" data-level="1">六、部署与交付</h1>
+
+  <div class="doc-section">
+    <ol class="timeline">
+      <li>
+        <strong>阶段一 · 开发验收</strong>
+        <p>Mac 本机 uvicorn 直跑，data/ 在本地；全家设备连同一 Wi-Fi 即可试用，完整走一遍录入 → 复习 → 导出 → 备份流程。</p>
+      </li>
+      <li>
+        <strong>阶段二 · 生产部署</strong>
+        <p>从源码全量构建双架构 Docker 镜像（fnOS 用 amd64，arm64 备用）；docker-compose 编排，数据卷映射 NAS 共享目录；容器开机自启，健康检查对接 /api/health。</p>
+      </li>
+      <li>
+        <strong>交付物清单</strong>
+        <p>源码、Dockerfile、docker-compose.yml、自检脚本（check.sh：磁盘余量 / 库完整性 / 备份年龄）、README（部署、备份、恢复、回滚、常见问题）。</p>
+      </li>
+      <li>
+        <strong>回滚策略</strong>
+        <p>镜像保留历史版本，NAS 上一条命令切回旧版；数据目录与镜像解耦，回滚不动数据。</p>
+      </li>
+    </ol>
+  </div>
+
+  <!-- ===== 七、版本规划 ===== -->
+  <h1 class="heading" data-level="1">七、版本规划</h1>
+
+  <div class="doc-section">
+    <p class="paragraph no-indent"><strong>V1（本次交付）</strong></p>
+    <ul class="list">
+      <li>前端：今日 / 错题本 / 加题 / 统计 / 我的，小怪兽卡通风。</li>
+      <li>后端：FastAPI 鉴权、双形态录入、复习引擎、统计、PDF 双模板导出、每日自动备份。</li>
+      <li>交付：源码 + Dockerfile + compose + 自检脚本 + README，先本机验收，后发飞牛 NAS。</li>
+    </ul>
+  </div>
+
+  <div class="doc-section alt">
+    <p class="paragraph no-indent"><strong>V2 展望</strong>：OCR 题目文字识别、语音读题、同知识点变式题（防背答案）、PWA 安装到手机桌面。</p>
+    <p class="paragraph no-indent"><strong>V3 方向探索</strong>：多孩支持、学期间对比、错题趋势分析。</p>
+  </div>
+
+  <div class="divider"><span class="line"></span><span class="diamond"></span><span class="line"></span></div>
+
+  <!-- ===== 八、已确认决策 ===== -->
+  <h1 class="heading" data-level="1">八、已确认决策记录</h1>
+
+  <div class="table-wrap">
+    <div class="table-caption">经四轮讨论确认的关键决策</div>
+    <table class="table" data-caption="经四轮讨论确认的关键决策">
+      <colgroup><col style="width:28%"><col style="width:72%"></colgroup>
+      <thead>
+        <tr><th>决策项</th><th>结论</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>目标用户</td><td>三、四年级孩子 + 家长</td></tr>
+        <tr><td>覆盖科目</td><td>数学、语文、英语（录入按题型双形态分流）</td></tr>
+        <tr><td>界面风格</td><td>小怪兽卡通风（错题 = 小怪兽，消灭得星星）</td></tr>
+        <tr><td>❌ 判定回炉规则</td><td>归零重来（回 1 天档重新爬，简单扎实）</td></tr>
+        <tr><td>技术栈</td><td>Python：FastAPI + SQLite + Pillow + reportlab + APScheduler</td></tr>
+        <tr><td>部署形态</td><td>飞牛 NAS（Docker，amd64），先 Mac 本机开发验收</td></tr>
+        <tr><td>PDF 导出</td><td>收藏本 + 重练卷双模板，并入 V1</td></tr>
+        <tr><td>数据边界</td><td>仅家庭局域网，零外部上传；每日自动备份</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== 尾页 ===== -->
+  <section class="title end_page">
+    <h1>确认后开工</h1>
+    <p>本文档为 V1 开发基线。Review 通过后按"本机开发验收 → NAS 部署"两阶段推进；<br>任何调整直接告诉我，同步修订本文档。修订记录：V1.0 · 2026-11-06 · 初版。</p>
+  </section>
+
+</body>
+</html>

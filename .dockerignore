@@ -1,0 +1,24 @@
+# 依赖与虚拟环境（容器内重装）
+.venv/
+requirements-dev.txt
+
+# 运行数据（通过挂载卷提供，绝不打进镜像）
+data/
+
+# 开发与文档杂物
+.git/
+.gitignore
+.temp/
+.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store
+*.md
+!README.md
+错题本产品设计文档.html
+tests/
+start.sh
+check.sh
+docker-compose.yml
+Dockerfile
+.dockerignore
