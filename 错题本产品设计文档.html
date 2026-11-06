@@ -654,7 +654,7 @@ data/ 数据目录（NAS 卷，备份的最小单元）
 
   <div class="doc-section">
     <ul class="list">
-      <li><strong>每日自动备份：</strong>03:30 全量打包 db + photos + manifest（含版本号）为 zip，存 backups/，默认保留最近 30 份，滚动删除。</li>
+      <li><strong>每日自动备份：</strong>03:30 全量打包 db + photos + 密钥 + AI 配置 llm.json + manifest（含版本号）为 zip，存 backups/，默认保留最近 30 份，滚动删除。</li>
       <li><strong>手动一键备份：</strong>「我的」页常驻按钮，录完重要卷子随手按。</li>
       <li><strong>备份自检：</strong>PRAGMA quick_check 校验库完整性、检查磁盘余量与最近备份年龄；/api/health 暴露给自检脚本，统计页角标超 48 小时变黄提醒。</li>
       <li><strong>恢复极简：</strong>解压 zip 至 data/ 目录即完整还原；自检脚本带 --verify-backup 校验备份可用性。</li>

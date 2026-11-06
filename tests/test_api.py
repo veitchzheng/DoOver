@@ -383,6 +383,7 @@ def test_export_empty_scope(client):
 # ---------- 备份 ----------
 
 def test_manual_backup_and_download(client):
+    (backup_mod.DATA_DIR / "llm.json").write_text('{"active": "test"}', encoding="utf-8")
     r = client.post("/api/backup")
     assert r.status_code == 200
     body = r.json()
@@ -406,6 +407,7 @@ def test_backup_verify_and_restore(client):
     with zipfile.ZipFile(Path(backup_mod.BACKUP_DIR) / latest["name"]) as zf:
         names = zf.namelist()
         assert "doover.db" in names and "manifest.json" in names
+        assert "llm.json" in names                          # AI 配置随备份走，恢复即用
         assert any(n.startswith("photos/") for n in names)
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

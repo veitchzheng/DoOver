@@ -30,7 +30,7 @@ def do_backup(reason: str = "manual") -> dict:
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
         zf.write(DB_PATH, "doover.db")
-        for extra in ("secret.key", "初始访问码.txt"):
+        for extra in ("secret.key", "llm.json", "初始访问码.txt"):  # 密钥 + AI 配置 + 访问码提示
             f = DATA_DIR / extra
             if f.exists():
                 zf.write(f, extra)

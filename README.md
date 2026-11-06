@@ -24,7 +24,7 @@
 | PDF 双模板 | **收藏本**（题+错因+正解+状态，归档翻阅）/ **重练卷**（题+演算留白，语文自动排田字格、英语排四线三格，答案集中末页可沿虚线撕下；可勾选卷末附「举一反三」AI 变式题检验纠错效果） |
 | 统计看板 | 四数字卡、薄弱知识点 TOP5、错因占比、科目分布、待复核清单 |
 | AI 错题分析 | 录入后自动分析**考点/易错点**、生成**两档思考提示**（翻面前引导，不说答案）、建议**错因+知识点**（家长一键采用）；配置看图模型后照片题自动 **OCR 题干**；模型经 `data/llm.json` **一键切换**（DeepSeek / 通义千问 / GLM / Kimi / Ollama 本地等任意 OpenAI 兼容端点） |
-| 自动备份 | 每日 03:30 全量 zip（库+照片+密钥），保留最近 30 份滚动；Docker 部署备份独立落宿主机目录（与数据卷分离）；一键手动备份；`--verify-backup` 可恢复性校验 |
+| 自动备份 | 每日 03:30 全量 zip（库+照片+密钥+AI 配置），保留最近 30 份滚动；Docker 部署备份独立落宿主机目录（与数据卷分离）；一键手动备份；`--verify-backup` 可恢复性校验 |
 
 ---
 
@@ -77,12 +77,12 @@
 ```bash
 # 方式 A：NAS 可访问你内网 registry，构建双架构推送
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t <你的registry>/doover/doover:1.0.1 --push .
+  -t <你的registry>/doover/doover:1.0.2 --push .
 
 # 方式 B：离线交付——单架构构建 + 导出 tar 传到 NAS 再 load（fnOS 为 amd64）
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.1 --load .
-docker save doover/doover:1.0.1 | gzip > doover-1.0.1-amd64.tar.gz
-# NAS 上：docker load < doover-1.0.1-amd64.tar.gz
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.2 --load .
+docker save doover/doover:1.0.2 | gzip > doover-1.0.2-amd64.tar.gz
+# NAS 上：docker load < doover-1.0.2-amd64.tar.gz
 ```
 
 架构说明：镜像 tag 不带架构后缀，实际架构以构建平台为准；fnOS 常见为 x86_64（amd64）。
@@ -101,9 +101,9 @@ docker compose up -d
 ### 3. 升级与回滚
 
 ```bash
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.2 --load .   # 构建新版（tag 每次递增）
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.3 --load .   # 构建新版（tag 每次递增）
 docker compose down && docker compose up -d                                  # 切新版
-# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.1 ...）再 up -d
+# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.2 ...）再 up -d
 ```
 
 数据卷与备份卷均与镜像解耦，升级/回滚不影响 `data/` 里的错题与 `backups/` 里的备份。
@@ -112,7 +112,7 @@ docker compose down && docker compose up -d                                  # �
 
 ## 备份与恢复
 
-**自动**：每日 03:30 全量备份（db + 照片 + 缩略图 + 密钥 + manifest），保留最近 30 份滚动删除；每月 1 日 04:10 自动 VACUUM 压缩数据库。备份写入位置：Docker 部署默认落宿主机 `./backups` 目录（compose 已挂载 `./backups:/app/backups` 并设 `DOOVER_BACKUP_DIR=/app/backups`，与数据卷物理分离，数据卷损坏备份仍在）；本机直接跑时默认 `data/backups/`，也可用 `DOOVER_BACKUP_DIR` 指定任意目录。
+**自动**：每日 03:30 全量备份（db + 照片 + 缩略图 + 密钥 + AI 模型配置 llm.json + manifest），保留最近 30 份滚动删除；每月 1 日 04:10 自动 VACUUM 压缩数据库。备份写入位置：Docker 部署默认落宿主机 `./backups` 目录（compose 已挂载 `./backups:/app/backups` 并设 `DOOVER_BACKUP_DIR=/app/backups`，与数据卷物理分离，数据卷损坏备份仍在）；本机直接跑时默认 `data/backups/`，也可用 `DOOVER_BACKUP_DIR` 指定任意目录。
 
 **手动**：「统计」页或「我的」页一键「立即备份」；「下载」把最新备份另存一份到第二落盘（NAS 其他卷 / 移动硬盘）。
 
@@ -264,7 +264,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r requiremen
 
 ## 版本
 
-- **V1.0.1（当前）**：星星兑换申请-审批闭环（余额/累计分离）、重练卷「举一反三」AI 变式题、Docker 备份独立落盘、修复答案页串题
+- **V1.0.2（当前）**：备份包纳入 AI 配置 llm.json，恢复即用无需手工重建
+- **V1.0.1**：星星兑换申请-审批闭环（余额/累计分离）、重练卷「举一反三」AI 变式题、Docker 备份独立落盘、修复答案页串题
 - **V1.0.0**：五个页面、双形态录入、复习引擎、防放水、统计、PDF 双模板、自动备份、Docker 交付
 - **V2 展望**：语音读题、PWA 安装到桌面
 - **V3 方向**：多孩支持、学期间对比、错题趋势分析
