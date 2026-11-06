@@ -6,3 +6,6 @@ __pycache__/
 .DS_Store
 *.egg-info/
 .temp/
+
+# Docker 交付镜像包（不入库，本地留存）
+*.tar.gz
