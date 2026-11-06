@@ -1048,16 +1048,110 @@ def me():
     conn = db.get_conn()
     try:
         t_iso = engine.today().isoformat()
-        stars = engine.total_stars(conn)
+        stars = engine.total_stars(conn)          # 可用余额（兑换会减少）
+        stars_earned = engine.stars_earned(conn)  # 累计赚得（只增不减）
         stars_today = conn.execute(
             "SELECT COALESCE(SUM(stars),0) s FROM star_ledger WHERE substr(created_at,1,10)=?",
             (t_iso,)).fetchone()["s"]
         glory = [_row(conn, r) for r in conn.execute(
             "SELECT * FROM items WHERE status='mastered' ORDER BY mastered_at DESC LIMIT 50")]
-        return {"stars": stars, "stars_today": stars_today,
+        redeems = [dict(r) for r in conn.execute(
+            "SELECT id, note, stars, status, created_at, judged_at FROM redemptions "
+            "ORDER BY (status='pending') DESC, COALESCE(judged_at, created_at) DESC LIMIT 20")]
+        return {"stars": stars, "stars_earned": stars_earned, "stars_today": stars_today,
                 "streak": engine.streak(conn, t_iso),
                 "badges": engine.compute_badges(conn), "glory": glory,
-                "reward_rule": db.settings_get(conn, "reward_rule", "")}
+                "reward_rule": db.settings_get(conn, "reward_rule", ""),
+                "redeems": redeems}
+    finally:
+        conn.close()
+
+
+# ---------- 星星兑换（孩子申请 · 家长审批） ----------
+
+REDEEM_PENDING_MAX = 3   # 待审批上限，防申请刷屏
+
+
+@api.post("/redeem")
+def redeem_apply(body: dict = Body(...)):
+    """提交兑换申请（孩子主用，家长也可代提）：只登记不扣星，家长审批通过才扣"""
+    note = _clip(body.get("note"), 100)
+    stars = body.get("stars")
+    if not note:
+        raise HTTPException(400, "写清楚想兑换什么")
+    if not isinstance(stars, int) or isinstance(stars, bool) or not 1 <= stars <= 999:
+        raise HTTPException(400, "星星数量须为 1~999 的整数")
+    conn = db.get_conn()
+    try:
+        balance = engine.total_stars(conn)
+        if stars > balance:
+            raise HTTPException(400, f"星星不够啦，当前可用 {balance} 颗")
+        pending = conn.execute(
+            "SELECT COUNT(*) c FROM redemptions WHERE status='pending'").fetchone()["c"]
+        if pending >= REDEEM_PENDING_MAX:
+            raise HTTPException(400, "待家长处理的申请太多啦，等一等再申请")
+        conn.execute("INSERT INTO redemptions(note, stars, created_at) VALUES(?,?,?)",
+                     (note, stars, db.now_str()))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@parent.post("/redeem/{rid}/approve")
+def redeem_approve(rid: int):
+    """批准：从可用余额扣星（负数流水入账），申请转为已兑换"""
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT * FROM redemptions WHERE id=?", (rid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "申请不存在")
+        if row["status"] != "pending":
+            raise HTTPException(400, "该申请已处理过")
+        balance = engine.total_stars(conn)
+        if row["stars"] > balance:
+            raise HTTPException(400, f"星星不够扣啦（可用 {balance} 颗），先驳回或让孩子再攒攒")
+        now = db.now_str()
+        engine.add_stars(conn, "redeem", None, -row["stars"], now)
+        conn.execute("UPDATE redemptions SET status='approved', judged_at=? WHERE id=?",
+                     (now, rid))
+        conn.commit()
+        return {"ok": True, "balance": balance - row["stars"]}
+    finally:
+        conn.close()
+
+
+@parent.post("/redeem/{rid}/reject")
+def redeem_reject(rid: int):
+    """驳回：星星从未预扣，无需返还，仅申请留痕为未通过"""
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT status FROM redemptions WHERE id=?", (rid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "申请不存在")
+        if row["status"] != "pending":
+            raise HTTPException(400, "该申请已处理过")
+        conn.execute("UPDATE redemptions SET status='rejected', judged_at=? WHERE id=?",
+                     (db.now_str(), rid))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@api.delete("/redeem/{rid}")
+def redeem_cancel(rid: int):
+    """撤回自己的待审批申请（孩子端改主意用），已处理过的不可撤"""
+    conn = db.get_conn()
+    try:
+        row = conn.execute("SELECT status FROM redemptions WHERE id=?", (rid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "申请不存在")
+        if row["status"] != "pending":
+            raise HTTPException(400, "只能撤回还没处理的申请")
+        conn.execute("DELETE FROM redemptions WHERE id=?", (rid,))
+        conn.commit()
+        return {"ok": True}
     finally:
         conn.close()
 

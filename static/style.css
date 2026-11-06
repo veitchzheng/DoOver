@@ -188,7 +188,7 @@ main{max-width:760px;margin:0 auto;padding:16px 16px 8px}
 .search-row input{flex:1;border:2px solid var(--line2);border-radius:14px;padding:10px 14px;
   font-size:14px;background:#fff;color:var(--ink);outline:none;font-family:inherit}
 .search-row input:focus{border-color:var(--brand)}
-select.input,textarea.input{width:100%;border:2px solid var(--line2);border-radius:14px;
+select.input,textarea.input,input.input{width:100%;border:2px solid var(--line2);border-radius:14px;
   padding:10px 12px;font-size:14px;background:#fff;color:var(--ink);outline:none;font-family:inherit}
 textarea.input{min-height:74px;resize:vertical}
 .field-label{font-size:13px;font-weight:800;color:var(--ink2);margin:12px 0 6px}
@@ -287,6 +287,20 @@ textarea.input{min-height:74px;resize:vertical}
 .glory-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px dashed var(--line2);font-size:13.5px}
 .glory-row .g-star{color:var(--accent);font-weight:900}
 .glory-row .g-date{margin-left:auto;color:var(--ink2);font-size:12px;flex:none}
+/* 星星兑换（孩子申请 · 家长审批） */
+.redeem-apply{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.redeem-apply .input{flex:1;min-width:150px}
+.redeem-apply #rdStars{flex:0 0 92px;min-width:92px;text-align:center}
+.redeem-list{margin-top:6px}
+.redeem-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 2px;
+  border-bottom:1px dashed var(--line2);font-size:13.5px}
+.redeem-row:last-child{border-bottom:none}
+.rd-note{flex:1;min-width:120px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-stars{color:var(--accent);font-weight:900;flex:none}
+.rd-tag{font-size:12px;flex:none}
+.rd-pending{color:#B4791B}.rd-approved{color:#2E8B57}.rd-rejected{color:#B05A4A}
+.rd-date{margin-left:auto;color:var(--ink2);font-size:12px;flex:none}
+.rd-acts{display:flex;gap:6px;flex:none}
 .set-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:12px 2px;border-bottom:1px dashed var(--line2);font-size:14.5px;font-weight:700}
 .set-row:last-child{border-bottom:none}

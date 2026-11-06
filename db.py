@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS star_ledger (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_star_date ON star_ledger(created_at);
+CREATE TABLE IF NOT EXISTS redemptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  note TEXT NOT NULL,
+  stars INTEGER NOT NULL CHECK(stars > 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+  created_at TEXT NOT NULL,
+  judged_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_redemption_status ON redemptions(status, created_at);
 CREATE TABLE IF NOT EXISTS variants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,

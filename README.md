@@ -20,6 +20,7 @@
 | 防放水抽查 | 孩子自评的"做对了"默认标待复核，家长抽查通过才转正，驳回则追回星星、该题回炉 |
 | 每日上限 | 默认每天最多 8 道（3~15 可调），到期题自动排队，不给孩子堆量 |
 | 小怪兽激励 | 错题=小怪兽，做对得星，消灭进光荣榜；6 枚勋章由复习日志自动推算；**消灭时触发 AI 变式挑战**（再战同类怪，答对 +2 星，家长预审后放行） |
+| 星星兑换 | 孩子攒够星后在「我的」页提交兑换申请（内容+星数，待审批最多 3 条，可随时撤回），家长批准后从可用余额扣星并留档；**累计赚得与可用余额分开显示**，兑换只花余额、不动累计 |
 | PDF 双模板 | **收藏本**（题+错因+正解+状态，归档翻阅）/ **重练卷**（题+演算留白，语文自动排田字格、英语排四线三格，答案集中末页可沿虚线撕下；可勾选卷末附「举一反三」AI 变式题检验纠错效果） |
 | 统计看板 | 四数字卡、薄弱知识点 TOP5、错因占比、科目分布、待复核清单 |
 | AI 错题分析 | 录入后自动分析**考点/易错点**、生成**两档思考提示**（翻面前引导，不说答案）、建议**错因+知识点**（家长一键采用）；配置看图模型后照片题自动 **OCR 题干**；模型经 `data/llm.json` **一键切换**（DeepSeek / 通义千问 / GLM / Kimi / Ollama 本地等任意 OpenAI 兼容端点） |
@@ -50,7 +51,7 @@
 |---|---|---|
 | 今日复习 | ✅ 可代监看与判定 | ✅ 主战场：做题/判定/AI提示 |
 | 错题本/加题/统计 | ✅ 录题、管理、待复核抽查、导出 | ❌ 隐藏且后端拦截（403） |
-| 我的页 | 全部含设置/备份/改码 | 仅星星/勋章/光荣榜/兑换规则（只读） |
+| 我的页 | 全部含设置/备份/改码 | 星星/勋章/光荣榜/兑换规则（只读）+ 提交与撤回兑换申请 |
 
 隔离是**后端硬隔离**：孩子会话调家长接口一律 403，不是只藏按钮——改 UI、用 curl 都越不过去。两个孩子码管理入口：「我的 → 设置 → 孩子访问码」；待复核列表点缩略图在应用内弹层看原图，不再跳新页。
 
@@ -62,6 +63,7 @@
 | 睡前 10 分钟 | 孩子 | 「今日」页一题一卡：纸上演算 → 翻面对照 → 三键判定 |
 | 随时 | 家长 | 「统计」页抽查待复核判定，看薄弱知识点 |
 | 周五晚 | 家长 | 导出「重练卷」PDF 打印，周末纸质重练 |
+| 攒够星星 | 孩子 | 「我的」页提交兑换申请；家长批准后兑现，星星从余额扣除 |
 | 学期末 | 家长 | 导出「收藏本」归档；「我的」页开启新学期 |
 
 ---
@@ -75,12 +77,12 @@
 ```bash
 # 方式 A：NAS 可访问你内网 registry，构建双架构推送
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t <你的registry>/doover/doover:1.0.0 --push .
+  -t <你的registry>/doover/doover:1.0.1 --push .
 
 # 方式 B：离线交付——单架构构建 + 导出 tar 传到 NAS 再 load（fnOS 为 amd64）
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.0 --load .
-docker save doover/doover:1.0.0 | gzip > doover-1.0.0-amd64.tar.gz
-# NAS 上：docker load < doover-1.0.0-amd64.tar.gz
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.1 --load .
+docker save doover/doover:1.0.1 | gzip > doover-1.0.1-amd64.tar.gz
+# NAS 上：docker load < doover-1.0.1-amd64.tar.gz
 ```
 
 架构说明：镜像 tag 不带架构后缀，实际架构以构建平台为准；fnOS 常见为 x86_64（amd64）。
@@ -99,9 +101,9 @@ docker compose up -d
 ### 3. 升级与回滚
 
 ```bash
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.1 --load .   # 构建新版
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.2 --load .   # 构建新版（tag 每次递增）
 docker compose down && docker compose up -d                                  # 切新版
-# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.0 ...）再 up -d
+# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.1 ...）再 up -d
 ```
 
 数据卷与备份卷均与镜像解耦，升级/回滚不影响 `data/` 里的错题与 `backups/` 里的备份。
@@ -191,6 +193,8 @@ DeepSeek `deepseek-chat` 分析一道题约消耗几百 token，7 道题不到�
 | 当日到期题全部通过 | — | +2 |
 | 顽固题（错 ≥3 次）逆袭消灭 | — | +10 |
 
+星星除了赚，还能花：孩子在「我的」页提交兑换申请（内容+星数，待审批最多 3 条，可随时撤回），家长批准后从**可用余额**扣星留档（star_ledger 记 `redeem` 负数流水），驳回不扣；**累计赚得**只增不减，兑换只影响余额。
+
 ---
 
 ## 技术架构
@@ -200,7 +204,7 @@ DeepSeek `deepseek-chat` 分析一道题约消耗几百 token，7 道题不到�
         │  家庭局域网 HTTP · HttpOnly 签名 Cookie 鉴权
         ▼
 FastAPI 单进程（server.py）
-  ├─ REST API（13 个接口）      ├─ 复习引擎（engine.py，纯函数可测）
+  ├─ REST API（35 个接口）      ├─ 复习引擎（engine.py，纯函数可测）
   ├─ PDF 双模板（pdfgen.py）   ├─ 定时备份（backup.py + APScheduler）
   └─ 静态托管前端（原生 JS 单页应用，无构建步骤）
         ▼
@@ -224,9 +228,9 @@ data/ 数据目录（备份的最小单元）
 | `server.py` | FastAPI 全部路由 + 静态托管 + 调度器装配 |
 
 **API 一览**（除 login/health 外全部需要 Cookie 鉴权）：
-`POST /api/login`、`GET /api/today`、`POST/GET /api/items`、`PATCH/DELETE /api/items/{id}`、`POST /api/items/{id}/review`、`POST /api/review/{id}/verify`、`GET /api/stats`、`GET /api/me`、`GET/PUT /api/settings`、`POST /api/export/pdf`、`POST /api/backup`、`GET /api/health`、`GET /photos/{id}`。
+`POST /api/login`、`GET /api/today`、`POST/GET /api/items`、`PATCH/DELETE /api/items/{id}`、`POST /api/items/{id}/review`、`POST /api/review/{id}/verify`、`GET /api/stats`、`GET /api/me`、`POST /api/redeem`、`POST /api/redeem/{id}/approve|reject`（家长）、`DELETE /api/redeem/{id}`、`GET/PUT /api/settings`、`POST /api/export/pdf`、`POST /api/backup`、`GET /api/health`、`GET /photos/{id}`。
 
-**数据表**（6 张）：`items`（错题主状态机）、`photos`、`review_log`（只追加）、`star_ledger`（星星流水，勋章由日志推算）、`knowledge_points`（三科预置 + 自定义）、`settings`。
+**数据表**（8 张）：`items`（错题主状态机）、`photos`、`review_log`（只追加）、`star_ledger`（星星流水，勋章由日志推算）、`redemptions`（兑换申请与审批记录）、`variants`（AI 变式题与作答）、`knowledge_points`（三科预置 + 自定义）、`settings`。
 
 **性能设计**：照片为磁盘文件而非数据库 BLOB，库常年 <10MB；列表只加载 360px 缩略图；分页 + 索引；客户端上传前压缩。几年量级下查询不退化。
 
@@ -260,7 +264,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r requiremen
 
 ## 版本
 
-- **V1.0.0（当前）**：五个页面、双形态录入、复习引擎、防放水、统计、PDF 双模板、自动备份、Docker 交付
+- **V1.0.1（当前）**：星星兑换申请-审批闭环（余额/累计分离）、重练卷「举一反三」AI 变式题、Docker 备份独立落盘、修复答案页串题
+- **V1.0.0**：五个页面、双形态录入、复习引擎、防放水、统计、PDF 双模板、自动备份、Docker 交付
 - **V2 展望**：语音读题、PWA 安装到桌面
 - **V3 方向**：多孩支持、学期间对比、错题趋势分析
 

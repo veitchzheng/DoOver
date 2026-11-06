@@ -141,7 +141,13 @@ def streak7_badge_date(conn) -> str | None:
 
 
 def total_stars(conn) -> int:
+    """可用余额：全部流水求和（含兑换扣减与复核追回的负数项）"""
     return conn.execute("SELECT COALESCE(SUM(stars),0) s FROM star_ledger").fetchone()["s"]
+
+
+def stars_earned(conn) -> int:
+    """累计赚得：只算正向流水，兑换/追回不影响，是只增不减的荣誉值"""
+    return conn.execute("SELECT COALESCE(SUM(stars),0) s FROM star_ledger WHERE stars > 0").fetchone()["s"]
 
 
 def add_stars(conn, event: str, item_id, num: int, now_iso: str):

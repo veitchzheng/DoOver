@@ -437,6 +437,7 @@ def test_child_login_and_isolation(client):
         assert c.get("/api/stats").status_code == 403
         assert c.put("/api/settings", json={"daily_limit": 5}).status_code == 403
         assert c.post("/api/backup").status_code == 403
+        assert c.post("/api/redeem/1/approve").status_code == 403   # 审批兑换是家长专属
         assert c.post("/api/export/pdf", json={"template": "collection"}).status_code == 403
         assert c.post("/api/review/1/verify", json={"approve": True}).status_code == 403
         assert c.post("/api/items/1/analyze").status_code == 403
@@ -473,3 +474,63 @@ def test_parent_code_unchanged_for_existing_install(client):
     """升级兼容：原访问码继续作为家长码使用"""
     r = client.post("/api/login", json={"code": TEST_CODE})
     assert r.status_code == 200 and r.json()["role"] == "parent"
+
+
+# ---------- 星星兑换（孩子申请 · 家长审批闭环） ----------
+
+def test_redeem_flow_and_balance(client):
+    """申请只登记不扣星；家长批准后才扣，可用余额减少、累计赚得不变"""
+    conn = db.get_conn()
+    engine.add_stars(conn, "master", None, 30, db.now_str())   # 直接补 30 星做基数
+    conn.commit()
+    conn.close()
+    before = client.get("/api/me").json()
+    base_bal, base_earned = before["stars"], before["stars_earned"]
+    assert base_bal >= 20 and base_earned >= 20
+    assert client.post("/api/redeem", json={"note": "周末选一部电影", "stars": 20}).status_code == 200
+    me = client.get("/api/me").json()
+    rd = next(x for x in me["redeems"] if x["note"] == "周末选一部电影")
+    assert rd["status"] == "pending"
+    assert me["stars"] == base_bal and me["stars_earned"] == base_earned   # 申请不扣星
+    assert client.post(f"/api/redeem/{rd['id']}/approve").status_code == 200
+    me = client.get("/api/me").json()
+    assert me["stars"] == base_bal - 20
+    assert me["stars_earned"] == base_earned                                # 累计赚得只增不减
+    conn = db.get_conn()
+    assert conn.execute("SELECT stars FROM star_ledger WHERE event='redeem'"
+                        ).fetchone()["stars"] == -20                       # 负数流水入账
+    conn.close()
+    assert client.post(f"/api/redeem/{rd['id']}/approve").status_code == 400  # 重复处理
+    assert client.post("/api/redeem/99999/approve").status_code == 404
+
+
+def test_redeem_validation_and_limits(client):
+    """校验：空描述/非法星数/超额拒绝；驳回不扣星；待审批上限、孩子撤回与越权"""
+    bal = client.get("/api/me").json()["stars"]
+    assert client.post("/api/redeem", json={"note": "", "stars": 10}).status_code == 400
+    assert client.post("/api/redeem", json={"note": "零颗", "stars": 0}).status_code == 400
+    assert client.post("/api/redeem", json={"note": "布尔", "stars": True}).status_code == 400
+    assert client.post("/api/redeem", json={"note": "超额愿望", "stars": bal + 1}).status_code == 400
+    # 驳回：星星从未预扣，余额不变；已处理的申请不可再处理
+    client.post("/api/redeem", json={"note": "驳回测试", "stars": 5})
+    rid = next(x["id"] for x in client.get("/api/me").json()["redeems"]
+               if x["note"] == "驳回测试")
+    assert client.post(f"/api/redeem/{rid}/reject").status_code == 200
+    assert client.get("/api/me").json()["stars"] == bal
+    assert client.post(f"/api/redeem/{rid}/reject").status_code == 400
+    # 待审批最多 3 条，防申请刷屏
+    for i in range(3):
+        assert client.post("/api/redeem", json={"note": f"排队{i}", "stars": 1}).status_code == 200
+    assert client.post("/api/redeem", json={"note": "超限", "stars": 1}).status_code == 400
+    # 孩子可撤回自己的待审批申请；审批/驳回是家长专属（后端硬隔离）
+    with TestClient(server.app) as c:
+        c.post("/api/login", json={"code": CHILD_CODE})
+        pend = [x for x in c.get("/api/me").json()["redeems"] if x["status"] == "pending"]
+        assert c.delete(f"/api/redeem/{pend[0]['id']}").status_code == 200
+        assert c.delete(f"/api/redeem/{pend[0]['id']}").status_code == 404      # 已不存在
+        assert c.post(f"/api/redeem/{pend[1]['id']}/approve").status_code == 403
+        assert c.post(f"/api/redeem/{pend[1]['id']}/reject").status_code == 403
+    # 家长清场：剩余待审批全部驳回
+    for x in client.get("/api/me").json()["redeems"]:
+        if x["status"] == "pending":
+            client.post(f"/api/redeem/{x['id']}/reject")

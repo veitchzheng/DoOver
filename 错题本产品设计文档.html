@@ -536,7 +536,7 @@ table.table tbody tr:hover { background: #e0f7f3; }
     <ul class="list">
       <li><strong>勋章墙：</strong>初次胜利（消灭第 1 题）、坚持之星（连续复习 7 天）、怪兽猎人（累计消灭 10 题）、怪兽克星（累计消灭 50 题）、翻身仗（顽固题逆袭消灭）、三科通吃（数学 / 语文 / 英语各消灭 10 题）。</li>
       <li><strong>光荣榜：</strong>被消灭的题按时间陈列为"战利品"，可回看题目与消灭日期。</li>
-      <li><strong>奖励兑换：</strong>规则由家长自定义，如"20 颗星 = 周末选一部电影"，写在「我的」页。</li>
+      <li><strong>奖励兑换：</strong>规则由家长自定义，如"20 颗星 = 周末选一部电影"，写在「我的」页；孩子可提交兑换申请（内容 + 星数，最多 3 条待审批，可随时撤回），家长批准后从<strong>可用余额</strong>扣星并留档，驳回不扣；<strong>累计赚得</strong>只增不减，兑换只影响余额。</li>
     </ul>
   </div>
 
@@ -598,7 +598,8 @@ data/ 数据目录（NAS 卷，备份的最小单元）
         <tr><td>item（错题主表）</td><td>科目、题型（照片/错字词）、知识点 ID、错误原因、拼音提示、孩子错写、正确写法、错误答案备注、正确做法备注、阶段（0~5）、到期日、错次、状态、学期、创建时间</td></tr>
         <tr><td>photo</td><td>item_id、原图路径、缩略图路径</td></tr>
         <tr><td>review_log</td><td>item_id、判定结果（✅/⚠️/❌）、判定人、待复核标记、时间（只追加不修改）</td></tr>
-        <tr><td>star_ledger</td><td>事件类型、关联题 ID、星数、时间（勋章由日志推算，不另建表）</td></tr>
+        <tr><td>star_ledger</td><td>事件类型、关联题 ID、星数、时间（勋章由日志推算，不另建表；兑换扣星记 event=redeem 负数流水）</td></tr>
+        <tr><td>redemptions</td><td>兑换申请：内容、星数、状态（待审批/已兑换/未通过）、申请与审批时间</td></tr>
         <tr><td>knowledge_point</td><td>科目、名称、内置标记（三、四年级预置）</td></tr>
         <tr><td>settings</td><td>键、值（每日上限、复核开关、访问码、奖励规则、学期）</td></tr>
       </tbody>

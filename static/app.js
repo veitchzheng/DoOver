@@ -1340,11 +1340,26 @@ async function renderMe() {
   state.me = me;
   const st = state.meta.settings;
   const gloryList = state.gloryAll ? me.glory : me.glory.slice(0, 10);
+  const RD_TAG = { pending: "🕒 等待家长确认", approved: "✅ 已兑换", rejected: "❎ 未通过" };
+  const rdRow = r => `
+      <div class="redeem-row">
+        <span class="rd-note">${esc(r.note)}</span>
+        <span class="rd-stars">${r.stars} 星</span>
+        <span class="rd-tag rd-${r.status}">${RD_TAG[r.status]}</span>
+        <span class="rd-date">${String(r.status === "pending" ? r.created_at : (r.judged_at || r.created_at)).slice(0, 10)}</span>
+        ${r.status === "pending"
+          ? (state.role === "child"
+              ? `<button class="btn btn-ghost btn-sm" data-act="rdCancel" data-id="${r.id}">撤回</button>`
+              : `<span class="rd-acts"><button class="btn btn-brand btn-sm" data-act="rdApprove" data-id="${r.id}">批准</button>
+                 <button class="btn btn-ghost btn-sm" data-act="rdReject" data-id="${r.id}">驳回</button></span>`)
+          : ""}
+      </div>`;
+  const rdPendingN = me.redeems.filter(r => r.status === "pending").length;
   const box = $("#page-me");
   box.innerHTML = `
     <div class="me-hero">
-      <div><div class="stars">★ ${me.stars}</div><div class="sl">星星总账</div></div>
-      <div class="side">今日 +${me.stars_today}<br>🔥 连续 ${me.streak} 天</div>
+      <div><div class="stars">★ ${me.stars}</div><div class="sl">可用星星</div></div>
+      <div class="side">累计赚得 ${me.stars_earned}<br>今日 +${me.stars_today} · 🔥 连续 ${me.streak} 天</div>
     </div>
     <div class="card"><div class="card-title"><span class="ico">🏅</span>勋章墙</div>
       <div class="badge-grid">${me.badges.map(b => `
@@ -1363,13 +1378,26 @@ async function renderMe() {
       ${me.glory.length > 10 ? `<button class="btn btn-ghost btn-sm" style="margin-top:10px" data-act="gloryMore">
         ${state.gloryAll ? "收起" : `查看全部 ${me.glory.length}`}</button>` : ""}
     </div>
-    <div class="card"><div class="card-title"><span class="ico">🎁</span>星星兑换规则</div>
-      ${state.role === "child"
-        ? `<p style="font-size:14px;line-height:1.7">${esc(me.reward_rule)}</p>`
-        : `<textarea class="input" id="rewardRule">${esc(me.reward_rule)}</textarea>
-      <div style="margin-top:10px;text-align:right">
-        <button class="btn btn-brand btn-sm" data-act="saveReward">保存规则</button></div>`}
-    </div>
+    ${state.role === "child"
+      ? `<div class="card"><div class="card-title"><span class="ico">🎁</span>星星兑换</div>
+          <p style="font-size:14px;line-height:1.7">${esc(me.reward_rule)}</p>
+          <div class="redeem-apply">
+            <input class="input" id="rdNote" maxlength="100" placeholder="想兑换什么？如：周末选一部电影">
+            <input class="input" id="rdStars" type="number" min="1" max="999" inputmode="numeric" placeholder="星数">
+            <button class="btn btn-brand btn-sm" data-act="rdApply">申请兑换</button>
+          </div>
+          <div class="redeem-list">${me.redeems.map(rdRow).join("")
+            || "<p style='font-size:13px;color:var(--ink2)'>攒够星星就可以申请兑换上面的奖励啦</p>"}</div>
+        </div>`
+      : `<div class="card"><div class="card-title"><span class="ico">🎁</span>星星兑换规则</div>
+          <textarea class="input" id="rewardRule">${esc(me.reward_rule)}</textarea>
+        <div style="margin-top:10px;text-align:right">
+          <button class="btn btn-brand btn-sm" data-act="saveReward">保存规则</button></div></div>
+      <div class="card"><div class="card-title"><span class="ico">⏳</span>兑换审批${rdPendingN ? `（待处理 ${rdPendingN}）` : ""}</div>
+          <p style="font-size:13px;color:var(--ink2);line-height:1.6">孩子攒够星后可提交兑换申请；批准即从可用余额扣星，驳回不扣。当前可用 ★ ${me.stars}，累计赚得 ${me.stars_earned}</p>
+          <div class="redeem-list">${me.redeems.map(rdRow).join("")
+            || "<p style='font-size:13px;color:var(--ink2)'>还没有兑换申请</p>"}</div>
+        </div>`}
     ${state.role === "child" ? `<div class="card" style="text-align:center">
       <div style="font-size:13px;color:var(--ink2);margin-bottom:10px">这是你的专属界面，继续加油消灭小怪兽！</div>
       <button class="btn btn-ghost btn-sm" data-act="logout">退出登录</button>
@@ -1418,7 +1446,31 @@ async function renderMe() {
     state.role = null;
     showLogin();
   });
+  box.querySelector("[data-act=rdApply]")?.addEventListener("click", async () => {
+    const note = $("#rdNote").value.trim();
+    const stars = Number($("#rdStars").value);
+    if (!note) return toast("先写清楚想兑换什么");
+    if (!Number.isInteger(stars) || stars < 1 || stars > 999) return toast("星数填 1~999 的整数");
+    try { await api("/api/redeem", { method: "POST", body: { note, stars } });
+      toast("申请已发出，等家长确认 💌"); renderMe(); }
+    catch (e) { toast(e.message); }
+  });
+  box.querySelector("[data-act=rdCancel]")?.addEventListener("click", async e => {
+    try { await api(`/api/redeem/${e.currentTarget.dataset.id}`, { method: "DELETE" });
+      toast("已撤回申请"); renderMe(); }
+    catch (err) { toast(err.message); }
+  });
   if (state.role === "child") return;   // ↓↓ 以下均为家长专属控件的绑定
+  box.querySelectorAll("[data-act=rdApprove]").forEach(b => b.addEventListener("click", async () => {
+    try { const r = await api(`/api/redeem/${b.dataset.id}/approve`, { method: "POST" });
+      toast(`已批准兑换，可用 ${r.balance} 颗星`); renderMe(); }
+    catch (e) { toast(e.message); }
+  }));
+  box.querySelectorAll("[data-act=rdReject]").forEach(b => b.addEventListener("click", async () => {
+    try { await api(`/api/redeem/${b.dataset.id}/reject`, { method: "POST" });
+      toast("已驳回，星星未扣"); renderMe(); }
+    catch (e) { toast(e.message); }
+  }));
   box.querySelector("[data-act=saveReward]")?.addEventListener("click", async () => {
     try { await api("/api/settings", { method: "PUT", body: { reward_rule: $("#rewardRule").value } });
       state.meta = await api("/api/meta"); toast("兑换规则已保存"); }

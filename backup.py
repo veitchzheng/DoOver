@@ -12,7 +12,7 @@ from config import (APP_VERSION, BACKUP_DIR, BACKUP_KEEP, DATA_DIR, EXPORT_DIR,
                     EXPORT_KEEP, ensure_dirs)
 from db import DB_PATH, get_conn, now_str
 
-TABLES = ("items", "photos", "review_log", "star_ledger")
+TABLES = ("items", "photos", "review_log", "star_ledger", "variants", "redemptions")
 
 
 def do_backup(reason: str = "manual") -> dict:
