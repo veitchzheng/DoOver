@@ -1206,8 +1206,26 @@ def export_pdf(body: dict = Body(...)):
                 "group_by": body.get("group_by", "kp"),
                 "shuffle": bool(body.get("shuffle")),
                 "stubborn_top": bool(body.get("stubborn_top", True))}
-        path = pdfgen.generate(template, items, photos, logs, meta)
+        # 变式题（检验纠错效果）：按卷内知识点去重各出一道；单个失败跳过不影响整卷
+        variant_qs = []
+        if template == "practice" and body.get("variants") and llm.is_configured():
+            seen_kp: dict = {}
+            for it in items:
+                if it.get("kp_id") and it["kp_id"] not in seen_kp:
+                    seen_kp[it["kp_id"]] = it
+            for src in seen_kp.values():
+                try:
+                    v = llm.generate_variant(src, src.get("kp_name") or "", term)
+                    variant_qs.append({"question": v["question"], "answer": v["answer"],
+                                       "subject": src["subject"],
+                                       "subject_label": src["subject_label"],
+                                       "item_type": src["item_type"],
+                                       "kp_name": src.get("kp_name") or ""})
+                except Exception:
+                    traceback.print_exc()
+        path = pdfgen.generate(template, items, photos, logs, meta, variants=variant_qs)
         return {"filename": path.name, "size": path.stat().st_size,
+                "variants": len(variant_qs),
                 "download_url": f"/api/export/download/{path.name}", "generated_at": now}
     finally:
         conn.close()

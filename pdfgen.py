@@ -247,7 +247,8 @@ def _status_line(it: dict, st: dict) -> Paragraph | None:
     return Paragraph(f"状态：复习中（下次复习 {esc(due)}）", st["body"])
 
 
-def generate(template: str, items: list, photos: dict, logs: dict, meta: dict) -> Path:
+def generate(template: str, items: list, photos: dict, logs: dict, meta: dict,
+             variants: list | None = None) -> Path:
     """生成 PDF 并返回文件路径。
 
     template: collection | practice
@@ -255,6 +256,8 @@ def generate(template: str, items: list, photos: dict, logs: dict, meta: dict) -
     photos:   {item_id: 原图绝对路径}
     logs:     {item_id: [result, ...]} 复习轨迹
     meta:     subject_label / term / stats / filters_desc / group_by / shuffle / stubborn_top
+    variants: 重练卷可选「举一反三」变式题列表（question/answer/subject/subject_label/
+              item_type/kp_name），印在答案页前，答案并入末页
     """
     register_fonts()
     ensure_dirs()
@@ -342,6 +345,7 @@ def generate(template: str, items: list, photos: dict, logs: dict, meta: dict) -
                 if p:
                     block.append(_photo_flow(p))
                     block.append(Spacer(1, 2 * mm))
+                ans = it.get("solution") or "见原题照片，家长核对"
                 if practice:
                     block.append(AnswerLines(10))
                 else:
@@ -356,7 +360,6 @@ def generate(template: str, items: list, photos: dict, logs: dict, meta: dict) -
                     sl = _status_line(it, st)
                     if sl:
                         block.append(sl)
-                    ans = it.get("solution") or "见原题照片，家长核对"
             else:  # word
                 if practice:
                     block.append(Paragraph(f"默写：{esc(it.get('prompt') or '')}", st["body"]))
@@ -380,6 +383,30 @@ def generate(template: str, items: list, photos: dict, logs: dict, meta: dict) -
                 subj = it.get("subject_label") or it.get("subject", "")
                 answers.append(f"{idx}. 【{subj} · {esc(it.get('kp_name') or '')}】 {esc(ans)}")
 
+            story.append(KeepTogether(block))
+            story.append(Spacer(1, 5 * mm))
+
+    # ---- 举一反三 · 变式题（仅重练卷，检验纠错效果） ----
+    if practice and variants:
+        story.append(KeepTogether([
+            Paragraph("举一反三 · 变式题（检验纠错效果）", st["group"]),
+            Paragraph("以下为卷内知识点的同类新题，做完再翻最后一页对答案。", st["body"]),
+            Spacer(1, 2 * mm),
+        ]))
+        for i, v in enumerate(variants, 1):
+            subj = esc(v.get("subject_label") or v.get("subject") or "")
+            kp = esc(v.get("kp_name") or "未分类")
+            block = [Paragraph(f"变{i}. 【{subj} · {kp}】", st["item_head"]),
+                     Paragraph(esc(v.get("question") or ""), st["body"]),
+                     Spacer(1, 1.5 * mm)]
+            if v.get("item_type") == "word":
+                if v.get("subject") == "chinese":
+                    block.append(TianZiGe(4))
+                else:
+                    block.append(FourLineGrid(rows=1))
+            else:
+                block.append(AnswerLines(8))
+            answers.append(f"变{i}. 【{kp}】 {esc(v.get('answer') or '')}")
             story.append(KeepTogether(block))
             story.append(Spacer(1, 5 * mm))
 

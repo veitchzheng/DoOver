@@ -183,3 +183,69 @@ def test_variant_judge_fail_no_stars(client, monkeypatch):
     assert j["stars"] == 0
     assert client.get("/api/me").json()["stars"] == before
     client.put("/api/settings", json={"variant_gate": True})
+
+
+# ---------- 重练卷导出附变式题（检验纠错效果，一次性生成不入库） ----------
+
+def _mk_item(client, kp=None, subject="chinese"):
+    return client.post("/api/items", json={
+        "subject": subject, "prompt": "p", "wrong_text": "x", "correct_text": "y",
+        **({"kp_name": kp} if kp else {})}).json()["id"]
+
+
+def test_export_practice_variants_by_kp(client, monkeypatch):
+    """重练卷勾选变式：按知识点去重各出一道（无知识点的不算），题面与答案都进 PDF"""
+    write_cfg()
+    monkeypatch.setattr(llm, "chat", lambda m, cfg=None:
+                        '{"question": "默写：zhì（制服）", "answer": "制"}')
+    ids = [_mk_item(client, kp="形近字"), _mk_item(client, kp="形近字"),
+           _mk_item(client, kp="多音字"), _mk_item(client)]  # 第 4 题无知识点
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "variants": True, "group_by": "time",
+        "stubborn_top": False, "item_ids": ids})
+    assert r.status_code == 200
+    assert r.json()["variants"] == 2  # 形近字、多音字各一道
+    # PDF 实际印出了变式题区与末页答案
+    import pymupdf
+    pdf = client.get(r.json()["download_url"]).content
+    doc = pymupdf.open(stream=pdf, filetype="pdf")
+    text = "".join(p.get_text() for p in doc)
+    doc.close()
+    assert "举一反三" in text
+    assert "变1." in text and "变2." in text and "变3." not in text
+    assert "形近字" in text          # 变1 答案行：【形近字】 制
+
+
+def test_export_collection_ignores_variants(client, monkeypatch):
+    """收藏本即使带了 variants 参数也忽略"""
+    write_cfg()
+    monkeypatch.setattr(llm, "chat", lambda m, cfg=None:
+                        '{"question": "q", "answer": "a"}')
+    ids = [_mk_item(client, kp="形近字")]
+    r = client.post("/api/export/pdf", json={
+        "template": "collection", "variants": True, "item_ids": ids})
+    assert r.status_code == 200
+    assert r.json()["variants"] == 0
+
+
+def test_export_variants_llm_failure_skips(client, monkeypatch):
+    """生成全失败：跳过变式，整卷照常导出"""
+    write_cfg()
+    def boom(m, cfg=None):
+        raise RuntimeError("模型不可用")
+    monkeypatch.setattr(llm, "chat", boom)
+    ids = [_mk_item(client, kp="形近字"), _mk_item(client, kp="多音字")]
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "variants": True, "item_ids": ids})
+    assert r.status_code == 200
+    assert r.json()["variants"] == 0
+
+
+def test_export_variants_without_llm(client):
+    """未配置模型：请求了变式也静默跳过，不报错"""
+    remove_cfg()
+    ids = [_mk_item(client, kp="形近字")]
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "variants": True, "item_ids": ids})
+    assert r.status_code == 200
+    assert r.json()["variants"] == 0

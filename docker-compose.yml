@@ -1,6 +1,7 @@
 # DoOver 错题本 · docker-compose 部署编排
 # 飞牛 fnOS 示例：把下面 volumes 左侧路径改成 NAS 上你规划的目录，如
 #   /vol1/1000/docker/doover/data:/app/data
+#   /vol1/1000/docker/doover/backups:/app/backups   ← 备份独立落盘（强烈建议挂到与数据不同的磁盘）
 # 然后 docker compose up -d
 services:
   doover:
@@ -11,8 +12,10 @@ services:
     ports:
       - "8200:8200"
     volumes:
-      - ./data:/app/data     # 数据库 + 照片 + 备份，备份的最小单元
+      - ./data:/app/data       # 数据库 + 照片 + 密钥，备份的最小单元
+      - ./backups:/app/backups # 备份落宿主机指定目录（与数据分离，数据卷损坏备份仍在）
     environment:
       - TZ=Asia/Shanghai
+      - DOOVER_BACKUP_DIR=/app/backups   # 备份写入上面挂载的宿主机目录
       # - DOOVER_PORT=8200          # 如需改端口，同时改上面的 ports 映射
       # - DOOVER_BACKUP_KEEP=30      # 备份保留份数，默认 30

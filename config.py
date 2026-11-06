@@ -6,7 +6,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DOOVER_DATA", str(BASE_DIR / "data")))
 PHOTO_DIR = DATA_DIR / "photos"
 THUMB_DIR = DATA_DIR / "thumbs"
-BACKUP_DIR = DATA_DIR / "backups"
+# 备份落盘目录可独立配置（Docker 部署时挂到宿主机指定目录，与数据卷分离，第二落盘更保险）
+BACKUP_DIR = Path(os.environ.get("DOOVER_BACKUP_DIR", str(DATA_DIR / "backups")))
 EXPORT_DIR = DATA_DIR / "exports"
 SECRET_FILE = DATA_DIR / "secret.key"
 CODE_FILE = DATA_DIR / "初始访问码.txt"

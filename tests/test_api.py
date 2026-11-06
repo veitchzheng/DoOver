@@ -350,6 +350,31 @@ def test_export_practice_pdf_with_word_grids(client):
     assert client.get(body["download_url"]).status_code == 200
 
 
+def test_export_practice_photo_answer_not_leaked(client):
+    """回归：照片题在重练卷答案页取自身正解（曾串成前/后一题答案，排第一会直接崩）"""
+    r = client.post("/api/items", data={"payload": json.dumps({
+        "subject": "math", "kp_id": _kp_id(client, "math", "应用题"),
+        "reason": "careless", "wrong_answer": "41 支", "solution": "3×12-15=21 支"})},
+        files={"photo": ("p.png", _png_bytes(), "image/png")})
+    assert r.status_code == 200
+    pid = r.json()["id"]
+    wid = client.post("/api/items", json={"subject": "english", "prompt": "because（因为）",
+                                          "wrong_text": "becuase", "correct_text": "because",
+                                          "kp_name": "单词拼写"}).json()["id"]
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "group_by": "time", "stubborn_top": False,
+        "item_ids": [pid, wid]})
+    assert r.status_code == 200
+    import pymupdf
+    pdf = client.get(r.json()["download_url"]).content
+    doc = pymupdf.open(stream=pdf, filetype="pdf")
+    flat = "".join(p.get_text() for p in doc).replace("\n", " ")
+    doc.close()
+    assert "【数学 · 应用题】 3×12-15=21 支" in flat    # 第 1 题（照片题）答案=自身正解
+    assert "【应用题】 because" not in flat              # 不串成相邻错词题的答案
+    assert "【英语 · 单词拼写】 because" in flat         # 错词题答案正确
+
+
 def test_export_empty_scope(client):
     assert client.post("/api/export/pdf", json={
         "template": "practice", "subject": "other", "term": "不存在的学期"}).status_code == 400

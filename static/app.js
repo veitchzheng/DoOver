@@ -872,6 +872,11 @@ function openExport(preselect) {
         <option value="none">按到期顺序</option>
       </select>
     </div>
+    ${state.llm?.configured ? `
+    <div class="ex-var" id="exVarRow">
+      <label class="ex-var-l"><input type="checkbox" id="exVar" checked>
+      卷末附「举一反三」AI 变式题（每个知识点 1 道同类新题，检验纠错效果）</label>
+    </div>` : ""}
     <div class="m-acts">
       <button class="btn btn-ghost" data-act="closeModal">取消</button>
       <button class="btn btn-brand" id="exGo">生成 PDF</button>
@@ -881,15 +886,20 @@ function openExport(preselect) {
     tpl = t;
     $("#tplC").classList.toggle("on", t === "collection");
     $("#tplP").classList.toggle("on", t === "practice");
+    const row = $("#exVarRow");
+    if (row) row.style.display = t === "practice" ? "" : "none";  // 变式题只属重练卷
   };
   pick(tpl);  // 入口按钮直达时预选对应模板
   $("#tplC").onclick = () => pick("collection");
   $("#tplP").onclick = () => pick("practice");
   $("#exGo").onclick = async () => {
     const f = state.filters;
+    const varRow = $("#exVarRow");
+    const wantVar = varRow && varRow.style.display !== "none" && $("#exVar").checked;
     const body = { template: tpl, group_by: $("#exGroup").value,
                    shuffle: $("#exOrder").value === "shuffle",
                    stubborn_top: $("#exOrder").value === "stubborn" };
+    if (wantVar) body.variants = true;
     if (f.term) body.term = f.term;
     if (f.subject !== "all") body.subject = f.subject;
     if (f.status === "stubborn") body.stubborn = 1;
@@ -897,14 +907,24 @@ function openExport(preselect) {
     if (f.kp_id) body.kp_id = +f.kp_id;
     if (state.iTotal === state.items.length && state.items.length)
       body.item_ids = state.items.map(i => i.id);
+    const go = $("#exGo");
+    const oldTxt = go.textContent;
+    go.disabled = true;
+    go.textContent = wantVar ? "AI 出变式题中…" : "生成中…";
     try {
       const res = await api("/api/export/pdf", { method: "POST", body });
       closeModal();
-      toast("PDF 已生成，开始下载");
+      toast(wantVar && res.variants === 0
+        ? "PDF 已生成，但变式题没能生成（可稍后重试）"
+        : res.variants ? `PDF 已生成，附 ${res.variants} 道变式题` : "PDF 已生成，开始下载");
       const a = document.createElement("a");
       a.href = res.download_url; a.download = res.filename;
       document.body.appendChild(a); a.click(); a.remove();
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      toast(e.message);
+      go.disabled = false;
+      go.textContent = oldTxt;
+    }
   };
 }
 document.addEventListener("click", e => {

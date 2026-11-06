@@ -240,6 +240,10 @@ textarea.input{min-height:74px;resize:vertical}
 .crop-acts{display:flex;gap:10px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .form-grid .full{grid-column:1/-1}
+.ex-var{margin-top:10px;background:var(--brand-light);border-radius:14px;padding:10px 13px;
+  font-size:13px;font-weight:600;color:var(--ink)}
+.ex-var-l{display:flex;align-items:center;gap:8px;cursor:pointer}
+.ex-var-l input{width:17px;height:17px;accent-color:var(--brand);cursor:pointer;flex:none}
 .big-btn-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .big-btn-row .bb{border:2px solid var(--line2);background:#fff;border-radius:14px;
   padding:12px 4px;font-weight:800;font-size:14px;color:var(--ink2);cursor:pointer;text-align:center}
