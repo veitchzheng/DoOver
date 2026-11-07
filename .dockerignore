@@ -13,6 +13,10 @@ data/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Docker 镜像交付包（build 前一轮导出的 tar 会滚雪球进镜像）
+*.tar.gz
+*.tar
 *.md
 !README.md
 错题本产品设计文档.html
