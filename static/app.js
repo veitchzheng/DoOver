@@ -122,14 +122,14 @@ function showLogin() { $("#loginMask").classList.remove("hidden"); }
 function hideLogin() { $("#loginMask").classList.add("hidden"); }
 
 const PAGES = { today: renderToday, items: renderItems, add: renderAdd, stats: renderStats, me: renderMe };
-const CHILD_ALLOWED = ["today", "me"];          // 孩子端仅今日复习 + 我的
+const CHILD_ALLOWED = ["today", "items", "me"];   // 孩子：今日复习 + 错题本只读 + 我的
 function route() {
   const tab = (location.hash.replace("#/", "") || "today").split("?")[0];
   if (state.role === "child" && !CHILD_ALLOWED.includes(tab)) { location.hash = "#/today"; return; }
   if (tab !== "today") stopAiPoll();
-  // 分端可见性：孩子隐藏 错题本/加题/统计
+  // 分端可见性：孩子隐藏 加题/统计；错题本对孩子开放只读浏览
   $$(".tab").forEach(t => {
-    const parentOnly = ["items", "add", "stats"].includes(t.dataset.tab);
+    const parentOnly = ["add", "stats"].includes(t.dataset.tab);
     t.style.display = (state.role === "child" && parentOnly) ? "none" : "";
   });
   $$(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === tab));
@@ -557,7 +557,9 @@ async function renderItems() {
   const box = $("#page-items");
   const f = state.filters;
   if (!state.terms.length) {
-    try { state.terms = (await api("/api/stats")).terms; } catch (e) {}
+    // 优先用 meta（双角色可用）；老版本 meta 无 terms 时家长端回退 stats
+    state.terms = state.meta.terms?.length ? state.meta.terms : [];
+    if (!state.terms.length) { try { state.terms = (await api("/api/stats")).terms; } catch (e) {} }
   }
   if (!f.term) f.term = state.meta.settings.current_term;
   const kpOpts = kpsFor(f.subject === "all" ? "" : f.subject);
@@ -575,8 +577,9 @@ async function renderItems() {
       </div>
       <div class="search-row">
         <input id="fQ" placeholder="搜索题目 / 错字 / 做法…" value="${esc(f.q)}">
+        ${state.role !== "child" ? `
         <button class="btn btn-brand btn-sm" data-act="export" data-tpl="practice" title="周五打印，周末纸质重练">重练卷</button>
-        <button class="btn btn-ghost btn-sm" data-act="export" data-tpl="collection" title="归档留存 / 给老师看">收藏本</button>
+        <button class="btn btn-ghost btn-sm" data-act="export" data-tpl="collection" title="归档留存 / 给老师看">收藏本</button>` : ""}
       </div>
       <div class="search-row">
         <select class="input" id="fTerm" style="flex:1">
@@ -649,11 +652,13 @@ function itemRowHTML(it) {
     ? `<img src="/photos/${it.photo_ids[0]}?size=thumb" alt="">`
     : `<span class="glyph">${esc((it.correct_text || it.prompt || "?").slice(0, 2))}</span>`;
   const ops = [];
-  if (it.status === "reviewing") ops.push(`<button data-act="pause" data-id="${it.id}">暂停</button>`);
-  if (it.status === "paused") ops.push(`<button data-act="resume" data-id="${it.id}">恢复</button>`);
-  if (it.status === "mastered") ops.push(`<button data-act="retest" data-id="${it.id}">再考</button>`);
-  ops.push(`<button data-act="edit" data-id="${it.id}">编辑</button>`);
-  ops.push(`<button class="danger" data-act="del" data-id="${it.id}">删除</button>`);
+  if (state.role !== "child") {          // 管理动作仅家长端可见；孩子端只读
+    if (it.status === "reviewing") ops.push(`<button data-act="pause" data-id="${it.id}">暂停</button>`);
+    if (it.status === "paused") ops.push(`<button data-act="resume" data-id="${it.id}">恢复</button>`);
+    if (it.status === "mastered") ops.push(`<button data-act="retest" data-id="${it.id}">再考</button>`);
+    ops.push(`<button data-act="edit" data-id="${it.id}">编辑</button>`);
+    ops.push(`<button class="danger" data-act="del" data-id="${it.id}">删除</button>`);
+  }
   const stTxt = it.status === "mastered"
     ? `已消灭 · ${String(it.mastered_at || "").slice(0, 10)}`
     : it.status === "paused" ? "已暂停" : `下次 ${it.due_date || "-"}`;
@@ -676,7 +681,7 @@ function itemRowHTML(it) {
         <span>${it.stage}/5</span><span>${stTxt}</span>
       </div>
     </div>
-    <div class="ops">${ops.join("")}</div>
+    ${ops.length ? `<div class="ops">${ops.join("")}</div>` : ""}
   </div>`;
 }
 
@@ -701,10 +706,56 @@ $("#page-items").addEventListener("click", async e => {
     } catch (err) { toast(err.message); }
     return;
   }
-  if (act === "edit" || (act === "view" && el.classList.contains("item-card"))) {
-    editItemModal(state.items.find(i => i.id == id));
+  if (act === "view" && el.classList.contains("item-card")) {
+    const it = state.items.find(i => i.id == id);
+    state.role === "child" ? viewItemModal(it) : editItemModal(it);
+    return;
   }
+  if (act === "edit") editItemModal(state.items.find(i => i.id == id));
 });
+
+function viewItemModal(it) {
+  // 孩子端只读详情：看题、照片、错因与正解、复习状态、AI 考点
+  if (!it) return;
+  const stTxt = it.status === "mastered"
+    ? `🏆 已消灭 · ${String(it.mastered_at || "").slice(0, 10)}`
+    : it.status === "paused" ? "已暂停，暂不排期"
+    : `下次复习 ${it.due_date || "-"}`;
+  const facts = `
+    <div class="ai-box" style="gap:6px">
+      <div class="ai-row"><span class="ai-k">状态</span>
+        <span>第 ${it.stage}/5 档 · ${stTxt}${it.stubborn ? ` · 顽固题 ×${it.wrong_count}` : ""}</span></div>
+      ${it.wrong_answer ? `<div class="ai-row"><span class="ai-k">当时错在</span><span>${esc(it.wrong_answer)}</span></div>` : ""}
+      ${it.solution ? `<div class="ai-row"><span class="ai-k">正确做法</span><span>${esc(it.solution)}</span></div>` : ""}
+    </div>`;
+  const ai = it.ai_status === "done"
+    ? `<div class="ai-box">
+        <div class="ai-row"><span class="ai-k">🎯 考点</span><span>${esc(it.ai_points || "—")}</span></div>
+        ${it.ai_pitfalls ? `<div class="ai-row"><span class="ai-k">⚠️ 易错点</span><span>${esc(it.ai_pitfalls)}</span></div>` : ""}
+      </div>` : "";
+  const preview = it.item_type === "photo"
+    ? (it.photo_ids?.length
+        ? `<div class="edit-preview">
+             <img src="/photos/${it.photo_ids[0]}" alt="原题照片" onclick="photoModal(${it.photo_ids[0]})">
+             <div class="edit-preview-tip">点击图片放大查看</div>
+           </div>`
+        : `<div class="edit-preview empty">这张题没有图片</div>`)
+    : `<div class="edit-preview word">
+         <div class="wp">${esc(it.prompt || "")}</div>
+         <div class="wline"><span class="w wrong">${esc(it.wrong_text || "")}</span>
+           <span class="warrow">→</span>
+           <span class="w right">${esc(it.correct_text || "")}</span></div>
+       </div>`;
+  openModal(`<h3>我的错题</h3>${preview}
+    <div class="l1" style="margin:10px 0 4px">
+      <span class="subj-badge sj-${it.subject}">${SUBJ[it.subject].label}</span>
+      ${it.kp_name ? `<span class="kp-badge">${esc(it.kp_name)}</span>` : ""}
+      ${it.reason_label ? `<span class="reason-badge">${esc(it.reason_label)}</span>` : ""}
+      ${it.stubborn ? `<span class="stubborn-badge">顽固 ×${it.wrong_count}</span>` : ""}
+    </div>
+    ${facts}${ai}
+    <div class="m-acts"><button class="btn btn-brand" data-act="closeModal">看完了</button></div>`);
+}
 
 async function editItemModal(it) {
   if (!it) return;

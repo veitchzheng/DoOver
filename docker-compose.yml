@@ -5,7 +5,7 @@
 # 然后 docker compose up -d
 services:
   doover:
-    image: doover/doover:1.0.3
+    image: doover/doover:1.0.4
     build: .          # 首次部署可直接 build；NAS 上建议 load 导入的镜像后注释掉本行
     container_name: doover
     restart: unless-stopped

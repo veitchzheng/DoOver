@@ -379,13 +379,15 @@ def meta(request: Request):
     conn = db.get_conn()
     kps = [dict(r) for r in conn.execute(
         "SELECT id, subject, name FROM knowledge_points ORDER BY subject, builtin DESC, id")]
+    terms = [r["term"] for r in conn.execute(
+        "SELECT DISTINCT term FROM items WHERE term != '' ORDER BY term DESC")]
     s = {k: db.settings_get(conn, k) for k in
          ("daily_limit", "verify_enabled", "ai_hint_enabled", "variant_gate", "current_term", "reward_rule")}
     conn.close()
     return {
         "role": role,
         "subjects": SUBJECTS, "reasons": REASONS, "statuses": STATUSES,
-        "item_types": ITEM_TYPES, "kps": kps,
+        "item_types": ITEM_TYPES, "kps": kps, "terms": terms,
         "settings": {
             "daily_limit": int(s["daily_limit"] or 8),
             "verify_enabled": s["verify_enabled"] == "true",
@@ -526,7 +528,7 @@ async def create_item(request: Request):
         conn.close()
 
 
-@parent.get("/items")
+@api.get("/items")
 def list_items(subject: Optional[str] = None, kp_id: Optional[int] = None,
                status: Optional[str] = None, term: Optional[str] = None,
                stubborn: Optional[int] = 0, q: Optional[str] = None,

@@ -429,21 +429,25 @@ def test_parent_role_meta(client):
 
 
 def test_child_login_and_isolation(client):
-    """孩子码登录 → 仅复习相关接口；家长接口一律 403"""
+    """孩子码登录 → 复习 + 错题本只读；管理/统计/导出接口一律 403"""
     with TestClient(server.app) as c:
         r = c.post("/api/login", json={"code": CHILD_CODE})
         assert r.status_code == 200 and r.json()["role"] == "child"
         meta = c.get("/api/meta").json()
         assert meta["role"] == "child"
-        # 孩子可用：今日、我的、meta、判定、提示、单题
+        # 孩子可用：今日、我的、meta（含学期列表）、判定、提示、单题、错题本只读浏览
         assert c.get("/api/today").status_code == 200
         assert c.get("/api/me").status_code == 200
         assert c.get("/api/llm/status").status_code == 200
+        assert isinstance(meta["terms"], list)         # meta 带 terms，孩子筛选不依赖 stats
+        li = c.get("/api/items")
+        assert li.status_code == 200                     # 只读浏览放开
+        assert "items" in li.json() and "total" in li.json()
         # 家长专属：越权全部 403（后端硬隔离，不依赖 UI 隐藏）
         assert c.post("/api/items", json={
             "subject": "chinese", "prompt": "p", "wrong_text": "x",
             "correct_text": "y"}).status_code == 403
-        assert c.get("/api/items").status_code == 403
+        assert c.patch("/api/items/1", json={"solution": "改"}).status_code == 403
         assert c.get("/api/stats").status_code == 403
         assert c.put("/api/settings", json={"daily_limit": 5}).status_code == 403
         assert c.post("/api/backup").status_code == 403
