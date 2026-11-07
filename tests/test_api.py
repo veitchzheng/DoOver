@@ -59,6 +59,14 @@ def test_health_no_auth(client):
     assert "backup" in body and "disk_free_mb" in body
 
 
+def test_index_injects_asset_version(client):
+    """首页 no-cache 且注入资源版本号，防手机缓存旧 JS/CSS 新旧混用"""
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "no-cache" in r.headers.get("cache-control", "")
+    assert "style.css?v=" in r.text and "app.js?v=" in r.text
+
+
 def test_api_requires_login():
     with TestClient(server.app) as c:  # 未登录的新客户端
         assert c.get("/api/today").status_code == 401

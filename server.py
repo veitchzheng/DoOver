@@ -19,7 +19,7 @@ from typing import Optional
 import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps
 
@@ -1360,6 +1360,18 @@ app.include_router(public)
 app.include_router(api)
 app.include_router(parent)
 app.include_router(photos_api)
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    """首页注入资源版本号（?v=APP_VERSION），手机不再缓存旧 JS/CSS 导致新旧混用；
+    HTML 本身 no-cache 每次轻量校验，版本不变时静态资源仍可复用缓存"""
+    html = (BASE_DIR / "static" / "index.html").read_text(encoding="utf-8")
+    html = html.replace('href="style.css"', f'href="style.css?v={APP_VERSION}"')
+    html = html.replace('src="app.js"', f'src="app.js?v={APP_VERSION}"')
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
 app.mount("/", StaticFiles(directory=str(BASE_DIR / "static"), html=True), name="static")
 
 if __name__ == "__main__":

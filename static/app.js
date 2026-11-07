@@ -1085,7 +1085,8 @@ $("#page-add").addEventListener("click", e => {
 /* ----- 拍照 / 裁剪 / 压缩 ----- */
 const photoInput = document.createElement("input");
 photoInput.type = "file"; photoInput.accept = "image/*";
-photoInput.capture = "environment"; photoInput.id = "photoFile";
+// 不设 capture：设了会在安卓上强制拉起相机、无法选相册；不设则弹「拍照/相册」菜单
+photoInput.id = "photoFile";
 photoInput.style.display = "none";
 document.body.appendChild(photoInput);
 

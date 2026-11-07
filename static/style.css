@@ -331,8 +331,9 @@ textarea.input{min-height:74px;resize:vertical}
 .tab{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;
   font-size:11.5px;font-weight:800;color:#B8AA9A;cursor:pointer;padding:4px 0;position:relative}
 .tab.on{color:var(--brand-dark)}
-.tab-add{margin-top:-26px}
-.tab-add .ic{width:56px;height:56px;border-radius:50%;background:var(--brand);color:#fff;
+.tab-add{position:static}   /* 圆钮以 tabbar 为定位基准，跨浏览器几何一致 */
+.tab-add .ic{position:absolute;left:50%;top:0;transform:translate(-50%,-50%); /* 圆心锚定栏顶线 */
+  width:56px;height:56px;border-radius:50%;background:var(--brand);color:#fff;
   display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(255,90,70,.4);
   border:4px solid var(--bg)}
 .tab.on .ic,.tab svg{display:block}

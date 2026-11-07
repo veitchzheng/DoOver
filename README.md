@@ -77,12 +77,12 @@
 ```bash
 # 方式 A：NAS 可访问你内网 registry，构建双架构推送
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t <你的registry>/doover/doover:1.0.2 --push .
+  -t <你的registry>/doover/doover:1.0.3 --push .
 
 # 方式 B：离线交付——单架构构建 + 导出 tar 传到 NAS 再 load（fnOS 为 amd64）
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.2 --load .
-docker save doover/doover:1.0.2 | gzip > doover-1.0.2-amd64.tar.gz
-# NAS 上：docker load < doover-1.0.2-amd64.tar.gz
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.3 --load .
+docker save doover/doover:1.0.3 | gzip > doover-1.0.3-amd64.tar.gz
+# NAS 上：docker load < doover-1.0.3-amd64.tar.gz
 ```
 
 架构说明：镜像 tag 不带架构后缀，实际架构以构建平台为准；fnOS 常见为 x86_64（amd64）。
@@ -101,9 +101,9 @@ docker compose up -d
 ### 3. 升级与回滚
 
 ```bash
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.3 --load .   # 构建新版（tag 每次递增）
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.4 --load .   # 构建新版（tag 每次递增）
 docker compose down && docker compose up -d                                  # 切新版
-# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.2 ...）再 up -d
+# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.3 ...）再 up -d
 ```
 
 数据卷与备份卷均与镜像解耦，升级/回滚不影响 `data/` 里的错题与 `backups/` 里的备份。
@@ -264,7 +264,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r requiremen
 
 ## 版本
 
-- **V1.0.2（当前）**：备份包纳入 AI 配置 llm.json，恢复即用无需手工重建
+- **V1.0.3（当前）**：修复手机端无法从相册选图（移除强制拉起相机的 `capture`）、加号按钮几何修正（圆心锚定栏顶线）、静态资源带版本号 + HTML no-cache 根治手机缓存新旧混用
+- **V1.0.2**：备份包纳入 AI 配置 llm.json，恢复即用无需手工重建
 - **V1.0.1**：星星兑换申请-审批闭环（余额/累计分离）、重练卷「举一反三」AI 变式题、Docker 备份独立落盘、修复答案页串题
 - **V1.0.0**：五个页面、双形态录入、复习引擎、防放水、统计、PDF 双模板、自动备份、Docker 交付
 - **V2 展望**：语音读题、PWA 安装到桌面
