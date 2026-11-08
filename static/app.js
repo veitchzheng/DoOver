@@ -1277,8 +1277,9 @@ async function submitWordItem() {
 async function renderStats() {
   refreshTopRight();
   const box = $("#page-stats");
-  const cur = state.meta.settings.current_term;
-  if (!state.stats || state.stats.term !== cur) await loadStats(cur);
+  // 仅首次进页时加载当前学期；此后学期切换由顶部 chip 点击驱动，
+  // 不再强制回拉当前学期（否则点旧学期 chip 会被立即覆盖，看起来“点不动”）
+  if (!state.stats) await loadStats(state.meta.settings.current_term);
   const s = state.stats;
   const maxC = Math.max(...s.top5.map(t => t.c), 1);
   const reasonColors = ["#FF8A3D", "#4C8DFF", "#22B573", "#9B6BFF", "#B8AA9A"];
