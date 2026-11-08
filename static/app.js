@@ -1572,6 +1572,8 @@ async function renderMe() {
         await api("/api/settings", { method: "PUT", body: { current_term: t } });
         state.meta = await api("/api/meta");
         state.terms = []; state.stats = null;
+        // 重置筛选：新学期后错题本/统计默认落在新的当前学期，不再沿用旧学期选择
+        state.filters = { subject: "all", status: "reviewing", term: null, kp_id: null, q: "" };
         closeModal(); toast(`新学期「${t}」开始啦 🎉`); renderMe();
       } catch (e) { toast(e.message); }
     };

@@ -564,3 +564,19 @@ def test_badges_short_cycle(client):
     assert b["day_clear"]["unlocked"] is True
     assert b["streak3"]["unlocked"] is False            # 测试库无连续 3 天数据
     assert b["streak7"]["unlocked"] is False
+
+
+# ---------- 学期切换 ----------
+
+def test_term_lists_always_include_current(client):
+    """学期列表永远包含当前学期：开启新学期后即使还没录题，
+    错题本下拉和统计 chips 里也能选到当前学期（旧学期视图不丢新学期入口）"""
+    client.put("/api/settings", json={"current_term": "四年级上"})
+    try:
+        meta = client.get("/api/meta").json()
+        assert "四年级上" in meta["terms"]                # 零题新学期也在下拉里
+        s = client.get("/api/stats?term=三年级上").json()   # 查看旧学期
+        assert "四年级上" in s["terms"]                   # 当前学期 chip 不消失
+        assert s["term"] == "三年级上"
+    finally:
+        client.put("/api/settings", json={"current_term": "三年级上"})

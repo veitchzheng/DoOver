@@ -383,6 +383,9 @@ def meta(request: Request):
         "SELECT DISTINCT term FROM items WHERE term != '' ORDER BY term DESC")]
     s = {k: db.settings_get(conn, k) for k in
          ("daily_limit", "verify_enabled", "ai_hint_enabled", "variant_gate", "current_term", "reward_rule")}
+    # 当前学期即使还没录题也要出现在学期列表里（错题本下拉/新学期刚开启时可选中）
+    if s["current_term"] and s["current_term"] not in terms:
+        terms.insert(0, s["current_term"])
     conn.close()
     return {
         "role": role,
@@ -953,6 +956,10 @@ def stats(term: Optional[str] = None):
             "SELECT DISTINCT term FROM items ORDER BY term DESC")]
         if t not in terms:
             terms.insert(0, t)
+        cur = db.settings_get(conn, "current_term")
+        # 当前学期永远在 chip 列表里：否则查旧学期时新学期 chip 消失、切不回来
+        if cur and cur not in terms:
+            terms.insert(0, cur)
         return {"term": t, "terms": terms, "total": total, "mastered": mastered,
                 "reviewing": reviewing, "paused": paused, "stubborn": stubborn, "rate": rate,
                 "top5": top5, "reasons": reasons, "subjects": subjects, "pending": pending,

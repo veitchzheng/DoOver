@@ -16,7 +16,7 @@ CHILD_CODE_FILE = DATA_DIR / "孩子访问码.txt"
 HOST = os.environ.get("DOOVER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DOOVER_PORT", "8200"))
 
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 BACKUP_KEEP = int(os.environ.get("DOOVER_BACKUP_KEEP", "30"))
 EXPORT_KEEP = int(os.environ.get("DOOVER_EXPORT_KEEP", "50"))
 SESSION_DAYS = 30
