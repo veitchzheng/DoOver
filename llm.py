@@ -60,6 +60,13 @@ VARIANT_SYSTEM_PROMPT = """你是出题老师。根据一道小学生错题，�
 3. 难度与原题相当，不要更难；数字算式要能口算/竖式解决
 4. 只输出 JSON：{"question": "…", "answer": "…"}，不要输出其他内容"""
 
+VARIANT_CHALLENGE_PROMPT = """你是出题老师。根据一道小学生错题，为它出一道【挑战变式题】：考查同一知识点，在原题基础上把难度提升一档（仍在小学三四年级能解决的范围内）——可以多一步小推理、数字稍大一点、或情境更绕一点，但不换考点。
+要求：
+1. question：题干完整自包含，孩子不看原题也能独立作答；不超过 150 字；语文/英语错字词类出"看提示写一写"式的新字词题（换一个更易混淆的同音/形近字词）
+2. answer：给出正确答案，外加一句话解析；不超过 120 字
+3. 提升一档后孩子踿踿脚够得着，不要超纲；数字算式仍要能口算/竖式解决
+4. 只输出 JSON：{"question": "…", "answer": "…"}，不要输出其他内容"""
+
 OCR_SYSTEM_PROMPT = """你是 OCR 助手。请从这张小学错题照片中逐字提取题目原文（含算式），
 按阅读顺序整理成连续文本，保留原有标点与换行；忽略书写潦草的答案痕迹与照片水印。
 只输出题目原文文字，不要解释、不要添加任何内容。若照片中没有题目文字，输出空字符串。"""
@@ -307,9 +314,10 @@ def parse_variant(text: str) -> dict:
     return {"question": question, "answer": answer or "（答案不完整，建议家长重新生成）"}
 
 
-def generate_variant(item: dict, kp_name: str, term: str = "", exclude: list | None = None) -> dict:
+def generate_variant(item: dict, kp_name: str, term: str = "", exclude: list | None = None,
+                     hard: bool = False) -> dict:
     """为错题生成一道同知识点变式题（消灭彩蛋 / 重练卷举一反三）；
-    exclude 传同一题已出过的题面，多道时防重复"""
+    exclude 传同一题已出过的题面，多道时防重复；hard=True 用挑战难度提示词（重练卷每题末道）"""
     cfg = load_config()
     if not cfg:
         raise RuntimeError("大模型未配置（请编辑 data/llm.json）")
@@ -334,7 +342,7 @@ def generate_variant(item: dict, kp_name: str, term: str = "", exclude: list | N
     if exclude:
         lines.append("同一道题已出过的变式题（这次请换情境换数字，不要与它们重复）：")
         lines.extend(f"- {q}" for q in exclude)
-    messages = [{"role": "system", "content": VARIANT_SYSTEM_PROMPT},
+    messages = [{"role": "system", "content": VARIANT_CHALLENGE_PROMPT if hard else VARIANT_SYSTEM_PROMPT},
                 {"role": "user", "content": "\n".join(lines)}]
     res = parse_variant(chat(messages, cfg))
     res["model"] = cfg["model"]

@@ -390,13 +390,14 @@ def generate(template: str, items: list, photos: dict, logs: dict, meta: dict,
     if practice and variants:
         story.append(KeepTogether([
             Paragraph("举一反三 · 变式题（检验纠错效果）", st["group"]),
-            Paragraph("以下为卷内知识点的同类新题，做完再翻最后一页对答案。", st["body"]),
+            Paragraph("以下为卷内每道错题的同类新题；标注「挑战」的难度升一档，踿踿脚试试。做完再翻最后一页对答案。", st["body"]),
             Spacer(1, 2 * mm),
         ]))
         for i, v in enumerate(variants, 1):
             subj = esc(v.get("subject_label") or v.get("subject") or "")
             kp = esc(v.get("kp_name") or "未分类")
-            block = [Paragraph(f"变{i}. 【{subj} · {kp}】", st["item_head"]),
+            tag = " · 挑战★" if v.get("hard") else ""
+            block = [Paragraph(f"变{i}. 【{subj} · {kp}{tag}】", st["item_head"]),
                      Paragraph(esc(v.get("question") or ""), st["body"]),
                      Spacer(1, 1.5 * mm)]
             if v.get("item_type") == "word":
@@ -406,7 +407,7 @@ def generate(template: str, items: list, photos: dict, logs: dict, meta: dict,
                     block.append(FourLineGrid(rows=1))
             else:
                 block.append(AnswerLines(8))
-            answers.append(f"变{i}. 【{kp}】 {esc(v.get('answer') or '')}")
+            answers.append(f"变{i}. 【{kp}{' · 挑战' if v.get('hard') else ''}】 {esc(v.get('answer') or '')}")
             story.append(KeepTogether(block))
             story.append(Spacer(1, 5 * mm))
 

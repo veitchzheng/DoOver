@@ -1232,15 +1232,16 @@ def export_pdf(body: dict = Body(...)):
                 if not src.get("kp_id"):
                     continue
                 got: list = []
-                for _ in range(per_item):
+                for k in range(per_item):
+                    hard = per_item >= 2 and k == per_item - 1   # 每题最后 1 道升级为挑战难度
                     try:
                         v = llm.generate_variant(src, src.get("kp_name") or "", term,
-                                                 exclude=[g["question"] for g in got])
+                                                 exclude=[g["question"] for g in got], hard=hard)
                         got.append({"question": v["question"], "answer": v["answer"],
                                     "subject": src["subject"],
                                     "subject_label": src["subject_label"],
                                     "item_type": src["item_type"],
-                                    "kp_name": src.get("kp_name") or ""})
+                                    "kp_name": src.get("kp_name") or "", "hard": hard})
                     except Exception:
                         traceback.print_exc()
                 variant_qs.extend(got)

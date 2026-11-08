@@ -214,6 +214,7 @@ def test_export_practice_variants_per_item(client, monkeypatch):
     assert "举一反三" in text
     assert "变9." in text and "变10." not in text
     assert "形近字" in text          # 答案行：【形近字】 制
+    assert text.count("挑战★") == 3   # 每题末道升级挑战难度，3 题 → 3 道
 
 
 def test_export_variant_count_custom_and_dedup(client, monkeypatch):
@@ -229,13 +230,18 @@ def test_export_variant_count_custom_and_dedup(client, monkeypatch):
     assert r.json()["variants"] == 10                     # 每题上限 5 截断
     seen = []
     def fake_chat(messages, cfg=None):
-        seen.append(messages[1]["content"])
+        seen.append(messages)
         return '{"question": "q' + str(len(seen)) + '", "answer": "a"}'
     monkeypatch.setattr(llm, "chat", fake_chat)
     r = client.post("/api/export/pdf", json={
         "template": "practice", "variants": True, "variant_count": 3, "item_ids": [ids[0]]})
     assert r.json()["variants"] == 3
-    assert len([p for p in seen if "已出过的变式题" in p]) == 2   # 第 2、3 次带已出题面
+    assert len([m for m in seen if "已出过的变式题" in m[1]["content"]]) == 2   # 第 2、3 次带已出题面
+    assert "挑战变式题" in seen[2][0]["content"]      # 末道切换挑战难度提示词
+    assert "挑战变式题" not in seen[0][0]["content"]  # 首道仍为同难度提示词
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "variants": True, "variant_count": 1, "item_ids": [ids[0]]})
+    assert r.json()["variants"] == 1                     # 单道时不出挑战题
 
 
 def test_export_collection_ignores_variants(client, monkeypatch):
