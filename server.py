@@ -771,89 +771,6 @@ def review_variant(vid: int, body: dict = Body(...)):
     return {"ok": True}
 
 
-# ---------- 变式题接口 ----------
-
-@api.get("/items/{item_id}/variant")
-def get_variant(item_id: int, request: Request):
-    """查询某题的变式题。孩子只能看已放行且未挑战的；家长可看全部（含预审）"""
-    role = require_auth(request)
-    conn = db.get_conn()
-    try:
-        row = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-        if not row:
-            raise HTTPException(404, "错题不存在")
-        v = conn.execute("SELECT * FROM variants WHERE item_id=? ORDER BY id DESC LIMIT 1",
-                         (item_id,)).fetchone()
-    finally:
-        conn.close()
-    if not v:
-        return {"exists": False}
-    if role != "parent" and (v["status"] != "approved" or v["used"]):
-        return {"exists": True, "locked": True}   # 未放行/已挑战：孩子只见锁定态
-    return {"exists": True, "locked": False, "variant": _variant_row(v),
-            "used": bool(v["used"]), "result": v["result"]}
-
-
-def _variant_row(v) -> dict:
-    return {"id": v["id"], "item_id": v["item_id"], "subject": v["subject"],
-            "question": v["question"], "answer": v["answer"], "status": v["status"],
-            "used": bool(v["used"]), "result": v["result"], "model": v["model"],
-            "created_at": v["created_at"]}
-
-
-@api.post("/variants/{vid}/judge")
-def judge_variant(vid: int, body: dict = Body(...)):
-    """孩子挑战变式题：做对 +2 星（一次性，不进复习引擎）"""
-    result = body.get("result")
-    if result not in ("pass", "fail"):
-        raise HTTPException(400, "判定结果不合法")
-    conn = db.get_conn()
-    try:
-        v = conn.execute("SELECT * FROM variants WHERE id=?", (vid,)).fetchone()
-        if not v:
-            raise HTTPException(404, "变式题不存在")
-        if v["status"] != "approved":
-            raise HTTPException(403, "这道变式题还没向孩子开放")
-        if v["used"]:
-            raise HTTPException(409, "这只变式怪已经挑战过了")
-        now = db.now_str()
-        conn.execute("UPDATE variants SET used=1, result=?, judged_at=? WHERE id=?",
-                     (result, now, vid))
-        stars = 0
-        if result == "pass":
-            stars = 2
-            engine.add_stars(conn, "variant", v["item_id"], stars, now)
-        conn.commit()
-        return {"ok": True, "stars": stars, "result": result}
-    finally:
-        conn.close()
-
-
-@parent.post("/variants/{vid}/review")
-def review_variant(vid: int, body: dict = Body(...)):
-    """家长预审：放行 / 驳回（删除）/ 重新生成"""
-    action = body.get("action")
-    if action not in ("approve", "reject", "regenerate"):
-        raise HTTPException(400, "操作不合法")
-    conn = db.get_conn()
-    try:
-        v = conn.execute("SELECT * FROM variants WHERE id=?", (vid,)).fetchone()
-        if not v:
-            raise HTTPException(404, "变式题不存在")
-        if action == "approve":
-            conn.execute("UPDATE variants SET status='approved' WHERE id=?", (vid,))
-            conn.commit()
-            return {"ok": True}
-        # reject / regenerate 都删除当前题；regenerate 再触发重新生成
-        conn.execute("DELETE FROM variants WHERE id=?", (vid,))
-        conn.commit()
-    finally:
-        conn.close()
-    if action == "regenerate":
-        _maybe_variant(v["item_id"])
-    return {"ok": True}
-
-
 @parent.post("/items/{item_id}/variant/generate")
 def generate_variant_for_item(item_id: int):
     """家长手动为已消灭错题生成变式题（老数据/生成失败重试）"""
@@ -1302,23 +1219,31 @@ def export_pdf(body: dict = Body(...)):
                 "group_by": body.get("group_by", "kp"),
                 "shuffle": bool(body.get("shuffle")),
                 "stubborn_top": bool(body.get("stubborn_top", True))}
-        # 变式题（检验纠错效果）：按卷内知识点去重各出一道；单个失败跳过不影响整卷
+        # 变式题（检验纠错效果）：每道错题各出 N 道同类新题（默认 3，1~5 可调）；
+        # 没归知识点的题跳过；单个失败跳过不影响整卷
         variant_qs = []
         if template == "practice" and body.get("variants") and llm.is_configured():
-            seen_kp: dict = {}
-            for it in items:
-                if it.get("kp_id") and it["kp_id"] not in seen_kp:
-                    seen_kp[it["kp_id"]] = it
-            for src in seen_kp.values():
-                try:
-                    v = llm.generate_variant(src, src.get("kp_name") or "", term)
-                    variant_qs.append({"question": v["question"], "answer": v["answer"],
-                                       "subject": src["subject"],
-                                       "subject_label": src["subject_label"],
-                                       "item_type": src["item_type"],
-                                       "kp_name": src.get("kp_name") or ""})
-                except Exception:
-                    traceback.print_exc()
+            try:
+                per_item = int(body.get("variant_count") or 3)
+            except (TypeError, ValueError):
+                per_item = 3
+            per_item = max(1, min(per_item, 5))
+            for src in items:
+                if not src.get("kp_id"):
+                    continue
+                got: list = []
+                for _ in range(per_item):
+                    try:
+                        v = llm.generate_variant(src, src.get("kp_name") or "", term,
+                                                 exclude=[g["question"] for g in got])
+                        got.append({"question": v["question"], "answer": v["answer"],
+                                    "subject": src["subject"],
+                                    "subject_label": src["subject_label"],
+                                    "item_type": src["item_type"],
+                                    "kp_name": src.get("kp_name") or ""})
+                    except Exception:
+                        traceback.print_exc()
+                variant_qs.extend(got)
         path = pdfgen.generate(template, items, photos, logs, meta, variants=variant_qs)
         return {"filename": path.name, "size": path.stat().st_size,
                 "variants": len(variant_qs),

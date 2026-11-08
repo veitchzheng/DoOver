@@ -307,8 +307,9 @@ def parse_variant(text: str) -> dict:
     return {"question": question, "answer": answer or "（答案不完整，建议家长重新生成）"}
 
 
-def generate_variant(item: dict, kp_name: str, term: str = "") -> dict:
-    """为已消灭的错题生成一道同知识点变式题（消灭彩蛋用）"""
+def generate_variant(item: dict, kp_name: str, term: str = "", exclude: list | None = None) -> dict:
+    """为错题生成一道同知识点变式题（消灭彩蛋 / 重练卷举一反三）；
+    exclude 传同一题已出过的题面，多道时防重复"""
     cfg = load_config()
     if not cfg:
         raise RuntimeError("大模型未配置（请编辑 data/llm.json）")
@@ -330,6 +331,9 @@ def generate_variant(item: dict, kp_name: str, term: str = "") -> dict:
             lines.append(f"孩子当时错在：{item['wrong_answer']}")
         if item.get("solution"):
             lines.append(f"正确做法：{item['solution']}")
+    if exclude:
+        lines.append("同一道题已出过的变式题（这次请换情境换数字，不要与它们重复）：")
+        lines.extend(f"- {q}" for q in exclude)
     messages = [{"role": "system", "content": VARIANT_SYSTEM_PROMPT},
                 {"role": "user", "content": "\n".join(lines)}]
     res = parse_variant(chat(messages, cfg))

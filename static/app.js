@@ -926,7 +926,8 @@ function openExport(preselect) {
     ${state.llm?.configured ? `
     <div class="ex-var" id="exVarRow">
       <label class="ex-var-l"><input type="checkbox" id="exVar" checked>
-      卷末附「举一反三」AI 变式题（每个知识点 1 道同类新题，检验纠错效果）</label>
+      卷末附「举一反三」AI 变式题（每道错题各出几道同类新题，检验纠错效果）</label>
+      <label class="ex-var-cnt">每题 <input type="number" id="exVarCount" min="1" max="5" value="3"> 道</label>
     </div>` : ""}
     <div class="m-acts">
       <button class="btn btn-ghost" data-act="closeModal">取消</button>
@@ -950,7 +951,10 @@ function openExport(preselect) {
     const body = { template: tpl, group_by: $("#exGroup").value,
                    shuffle: $("#exOrder").value === "shuffle",
                    stubborn_top: $("#exOrder").value === "stubborn" };
-    if (wantVar) body.variants = true;
+    if (wantVar) {
+      body.variants = true;
+      body.variant_count = Math.max(1, Math.min(5, +$("#exVarCount").value || 3));
+    }
     if (f.term) body.term = f.term;
     if (f.subject !== "all") body.subject = f.subject;
     if (f.status === "stubborn") body.stubborn = 1;

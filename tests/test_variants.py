@@ -193,8 +193,8 @@ def _mk_item(client, kp=None, subject="chinese"):
         **({"kp_name": kp} if kp else {})}).json()["id"]
 
 
-def test_export_practice_variants_by_kp(client, monkeypatch):
-    """重练卷勾选变式：按知识点去重各出一道（无知识点的不算），题面与答案都进 PDF"""
+def test_export_practice_variants_per_item(client, monkeypatch):
+    """重练卷勾选变式：每道错题默认各出 3 道（没知识点的不算），题面与答案都进 PDF"""
     write_cfg()
     monkeypatch.setattr(llm, "chat", lambda m, cfg=None:
                         '{"question": "默写：zhì（制服）", "answer": "制"}')
@@ -204,7 +204,7 @@ def test_export_practice_variants_by_kp(client, monkeypatch):
         "template": "practice", "variants": True, "group_by": "time",
         "stubborn_top": False, "item_ids": ids})
     assert r.status_code == 200
-    assert r.json()["variants"] == 2  # 形近字、多音字各一道
+    assert r.json()["variants"] == 9  # 有知识点的 3 题 × 每题默认 3 道
     # PDF 实际印出了变式题区与末页答案
     import pymupdf
     pdf = client.get(r.json()["download_url"]).content
@@ -212,8 +212,30 @@ def test_export_practice_variants_by_kp(client, monkeypatch):
     text = "".join(p.get_text() for p in doc)
     doc.close()
     assert "举一反三" in text
-    assert "变1." in text and "变2." in text and "变3." not in text
-    assert "形近字" in text          # 变1 答案行：【形近字】 制
+    assert "变9." in text and "变10." not in text
+    assert "形近字" in text          # 答案行：【形近字】 制
+
+
+def test_export_variant_count_custom_and_dedup(client, monkeypatch):
+    """举一反三每题条数可自定义（1~5 生效、超限截断），同题多道时 exclude 防重复"""
+    write_cfg()
+    monkeypatch.setattr(llm, "chat", lambda m, cfg=None: '{"question": "q", "answer": "a"}')
+    ids = [_mk_item(client, kp="形近字"), _mk_item(client, kp="多音字")]
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "variants": True, "variant_count": 1, "item_ids": ids})
+    assert r.json()["variants"] == 2                      # 每题 1 道
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "variants": True, "variant_count": 99, "item_ids": ids})
+    assert r.json()["variants"] == 10                     # 每题上限 5 截断
+    seen = []
+    def fake_chat(messages, cfg=None):
+        seen.append(messages[1]["content"])
+        return '{"question": "q' + str(len(seen)) + '", "answer": "a"}'
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    r = client.post("/api/export/pdf", json={
+        "template": "practice", "variants": True, "variant_count": 3, "item_ids": [ids[0]]})
+    assert r.json()["variants"] == 3
+    assert len([p for p in seen if "已出过的变式题" in p]) == 2   # 第 2、3 次带已出题面
 
 
 def test_export_collection_ignores_variants(client, monkeypatch):

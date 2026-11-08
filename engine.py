@@ -123,8 +123,8 @@ def streak(conn, today_iso: str) -> int:
     return n
 
 
-def streak7_badge_date(conn) -> str | None:
-    """首次达成"连续 7 天复习"的日期（勋章：坚持之星）"""
+def streak_badge_date(conn, n: int) -> str | None:
+    """首次达成"连续 n 天复习"的日期（三天连击 n=3 / 坚持之星 n=7）"""
     dates = [r["d"] for r in conn.execute(
         "SELECT DISTINCT substr(created_at,1,10) d FROM review_log ORDER BY d")]
     cur_start, cur_len, prev = None, 0, None
@@ -134,7 +134,7 @@ def streak7_badge_date(conn) -> str | None:
             cur_len += 1
         else:
             cur_start, cur_len = d, 1
-        if cur_len >= 7:
+        if cur_len >= n:
             return cur_start
         prev = dd
     return None
@@ -156,8 +156,18 @@ def add_stars(conn, event: str, item_id, num: int, now_iso: str):
 
 
 def compute_badges(conn) -> list[dict]:
-    """勋章由日志与题目推算，不落库。返回带 unlocked/achieved_at 的完整勋章墙。"""
+    """勋章由日志与题目推算，不落库。返回带 unlocked/achieved_at 的完整勋章墙。
+    前 3 枚短周期（当天/3 天可点亮），避免新用户勋章墙长期全灰挫伤积极性。"""
     badges = []
+
+    def first_review():
+        r = conn.execute("SELECT MIN(substr(created_at,1,10)) d FROM review_log").fetchone()
+        return r["d"] if r and r["d"] else None
+
+    def first_day_clear():
+        r = conn.execute("SELECT MIN(substr(created_at,1,10)) d FROM star_ledger "
+                         "WHERE event='day_all'").fetchone()
+        return r["d"] if r and r["d"] else None
 
     def first_master():
         r = conn.execute("SELECT MIN(mastered_at) m FROM items WHERE status='mastered'").fetchone()
@@ -187,11 +197,14 @@ def compute_badges(conn) -> list[dict]:
         return max(dates)
 
     checks = [
+        ("first_review", "首战告捷", "完成第一次复习判定", first_review),
+        ("day_clear", "今日通关", "首次当日任务全部通过", first_day_clear),
+        ("streak3", "三天连击", "连续复习 3 天", lambda: streak_badge_date(conn, 3)),
         ("first_master", "初次胜利", "消灭第 1 道错题", first_master),
-        ("streak7", "坚持之星", "连续复习 7 天", streak7_badge_date),
+        ("streak7", "坚持之星", "连续复习 7 天", lambda: streak_badge_date(conn, 7)),
         ("hunter10", "怪兽猎人", "累计消灭 10 道错题", lambda: mastered_count_at(10)),
-        ("slayer50", "怪兽克星", "累计消灭 50 道错题", lambda: mastered_count_at(50)),
         ("comeback", "翻身仗", "顽固题（错 3 次以上）逆袭消灭", comeback),
+        ("slayer50", "怪兽克星", "累计消灭 50 道错题", lambda: mastered_count_at(50)),
         ("trivium", "三科通吃", "数学/语文/英语各消灭 10 题", trivium),
     ]
     for key, name, desc, fn in checks:

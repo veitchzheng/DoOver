@@ -548,3 +548,19 @@ def test_redeem_validation_and_limits(client):
     for x in client.get("/api/me").json()["redeems"]:
         if x["status"] == "pending":
             client.post(f"/api/redeem/{x['id']}/reject")
+
+
+# ---------- 勋章（短周期点亮） ----------
+
+def test_badges_short_cycle(client):
+    """首战告捷/今日通关当天即可点亮、三天连击待续——
+    此前 6 枚全要求消灭或连续 7 天，新用户勋章墙长期全灰"""
+    conn = db.get_conn()
+    engine.add_stars(conn, "day_all", None, 2, db.now_str())   # 确保有当日全清流水
+    conn.commit(); conn.close()
+    b = {x["key"]: x for x in client.get("/api/me").json()["badges"]}
+    assert len(b) == 9
+    assert b["first_review"]["unlocked"] is True        # 前序用例已有判定记录
+    assert b["day_clear"]["unlocked"] is True
+    assert b["streak3"]["unlocked"] is False            # 测试库无连续 3 天数据
+    assert b["streak7"]["unlocked"] is False

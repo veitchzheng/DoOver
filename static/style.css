@@ -241,9 +241,12 @@ textarea.input{min-height:74px;resize:vertical}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .form-grid .full{grid-column:1/-1}
 .ex-var{margin-top:10px;background:var(--brand-light);border-radius:14px;padding:10px 13px;
-  font-size:13px;font-weight:600;color:var(--ink)}
-.ex-var-l{display:flex;align-items:center;gap:8px;cursor:pointer}
+  font-size:13px;font-weight:600;color:var(--ink);display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ex-var-l{display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;min-width:180px}
 .ex-var-l input{width:17px;height:17px;accent-color:var(--brand);cursor:pointer;flex:none}
+.ex-var-cnt{margin-left:auto;display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px}
+.ex-var-cnt input{width:56px;border:2px solid var(--line2);border-radius:10px;padding:4px 6px;
+  font-size:13px;font-weight:700;text-align:center;outline:none;font-family:inherit}
 .big-btn-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .big-btn-row .bb{border:2px solid var(--line2);background:#fff;border-radius:14px;
   padding:12px 4px;font-weight:800;font-size:14px;color:var(--ink2);cursor:pointer;text-align:center}
