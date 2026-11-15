@@ -606,3 +606,23 @@ def test_stars_manual_award(client):
         c.post("/api/login", json={"code": CHILD_CODE})
         assert c.post("/api/stars/award", json={"stars": 1}).status_code == 403
     assert client.get("/api/me").json()["stars"] == before["stars"] + 5
+
+
+def test_today_stars_and_redeem_note(client):
+    """今日页战报只算做题/奖励所得（兑换扣星不计入），我的页是净变动；
+    兑换扣星流水带申请内容，孩子端星星流水能看到兑了什么"""
+    base_today = client.get("/api/today").json()["stars_today"]
+    base_me = client.get("/api/me").json()["stars_today"]
+    assert client.post("/api/stars/award", json={"stars": 10, "note": "战报基数"}).status_code == 200
+    assert client.get("/api/today").json()["stars_today"] == base_today + 10
+    assert client.post("/api/redeem", json={"note": "一本漫画书", "stars": 10}).status_code == 200
+    rid = next(x["id"] for x in client.get("/api/me").json()["redeems"]
+               if x["note"] == "一本漫画书")
+    assert client.post(f"/api/redeem/{rid}/approve").status_code == 200
+    t = client.get("/api/today").json()
+    assert t["stars_today"] == base_today + 10          # 今日页战报不因兑换回退
+    assert "pending_verify" in t                        # 口径调整不误伤同段其他字段
+    me = client.get("/api/me").json()
+    assert me["stars_today"] == base_me + 10 - 10        # 我的页净变动如实反映兑换
+    lg = next(l for l in me["ledger"] if l["event"] == "redeem")
+    assert lg["stars"] == -10 and lg["note"] == "一本漫画书"

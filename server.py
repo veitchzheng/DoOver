@@ -417,10 +417,11 @@ def today():
         done = conn.execute("SELECT COUNT(*) c FROM review_log WHERE substr(created_at,1,10)=?",
                             (t_iso,)).fetchone()["c"]
         stars_today = conn.execute(
-            "SELECT COALESCE(SUM(stars),0) s FROM star_ledger WHERE substr(created_at,1,10)=?",
+            "SELECT COALESCE(SUM(stars),0) s FROM star_ledger WHERE substr(created_at,1,10)=?"
+            " AND event != 'redeem'",   # 今日页战报只算做题/奖励所得，兑换扣星不计入
             (t_iso,)).fetchone()["s"]
         pending = conn.execute("SELECT COUNT(*) c FROM review_log WHERE pending_verify=1"
-                               ).fetchone()["c"]
+                                ).fetchone()["c"]
         # 待挑战的变式怪：已放行、未挑战，且源题已消灭（跨会话持久入口）
         challenges = [dict(r) for r in conn.execute(
             "SELECT v.item_id, i.subject, COALESCE(k.name,'') kp_name"
@@ -978,7 +979,7 @@ def me():
         stars_earned = engine.stars_earned(conn)  # 累计赚得（只增不减）
         stars_today = conn.execute(
             "SELECT COALESCE(SUM(stars),0) s FROM star_ledger WHERE substr(created_at,1,10)=?",
-            (t_iso,)).fetchone()["s"]
+            (t_iso,)).fetchone()["s"]   # 我的页净变动：含兑换/追回，展示今日真实增减
         glory = [_row(conn, r) for r in conn.execute(
             "SELECT * FROM items WHERE status='mastered' ORDER BY mastered_at DESC LIMIT 50")]
         redeems = [dict(r) for r in conn.execute(
@@ -1041,7 +1042,8 @@ def redeem_approve(rid: int):
         if row["stars"] > balance:
             raise HTTPException(400, f"星星不够扣啦（可用 {balance} 颗），先驳回或让孩子再攒攒")
         now = db.now_str()
-        engine.add_stars(conn, "redeem", None, -row["stars"], now)
+        engine.add_stars(conn, "redeem", None, -row["stars"], now, note=row["note"])
+        # note 带兑换内容：星星流水里孩子能看到兑了什么
         conn.execute("UPDATE redemptions SET status='approved', judged_at=? WHERE id=?",
                      (now, rid))
         conn.commit()

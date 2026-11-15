@@ -80,12 +80,12 @@
 ```bash
 # 方式 A：NAS 可访问你内网 registry，构建双架构推送
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t <你的registry>/doover/doover:1.0.9 --push .
+  -t <你的registry>/doover/doover:1.0.10 --push .
 
 # 方式 B：离线交付——单架构构建 + 导出 tar 传到 NAS 再 load（fnOS 为 amd64）
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.9 --load .
-docker save doover/doover:1.0.9 | gzip > doover-1.0.9-amd64.tar.gz
-# NAS 上：docker load < doover-1.0.9-amd64.tar.gz
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.10 --load .
+docker save doover/doover:1.0.10 | gzip > doover-1.0.10-amd64.tar.gz
+# NAS 上：docker load < doover-1.0.10-amd64.tar.gz
 ```
 
 架构说明：镜像 tag 不带架构后缀，实际架构以构建平台为准；fnOS 常见为 x86_64（amd64）。
@@ -104,9 +104,9 @@ docker compose up -d
 ### 3. 升级与回滚
 
 ```bash
-docker buildx build --platform linux/amd64 -t doover/doover:1.0.10 --load .   # 构建新版（tag 每次递增）
+docker buildx build --platform linux/amd64 -t doover/doover:1.0.11 --load .   # 构建新版（tag 每次递增）
 docker compose down && docker compose up -d                                  # 切新版
-# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.9 ...）再 up -d
+# 回滚：compose 里 image 改回旧 tag（或 docker tag doover/doover:1.0.10 ...）再 up -d
 ```
 
 数据卷与备份卷均与镜像解耦，升级/回滚不影响 `data/` 里的错题与 `backups/` 里的备份。
@@ -267,7 +267,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r requiremen
 
 ## 版本
 
-- **V1.0.9（当前）**：家长端「我的」页新增手动奖励星星（1~99 颗 + 备注，应用外表现直接加星）；双端新增「星星流水」卡片（最近 8 笔，孩子可见每笔星来源与奖励原因）
+- **V1.0.10（当前）**：修复当日兑换后「今日 +-30」负数格式错误（改为正数带+/负数带-）；今日页战报改为只算做题/奖励所得（兑换扣星不再回退做题激励）；兑换扣星流水带申请内容（星星流水可见兑了什么）
+- **V1.0.9**：家长端「我的」页新增手动奖励星星（1~99 颗 + 备注，应用外表现直接加星）；双端新增「星星流水」卡片（最近 8 笔，孩子可见每笔星来源与奖励原因）
 - **V1.0.8**：修复开启新学期后的学期切换系列问题
 - **V1.0.7**：修复统计页点旧学期被立即回拉到当前学期，旧学期无法查看
 - **V1.0.6**：重练卷「举一反三」每题末道自动升级为「挑战★」难度（专用提示词，PDF 题头/答案页标注；单道时不出挑战题）

@@ -6,6 +6,7 @@ const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDelta = n => (n > 0 ? "+" : "") + n;   // 星数变动：正数带+，负数自带-，零为0
 
 const SUBJ = {
   math:    { label: "数学", color: "#FF8A3D" },
@@ -181,7 +182,7 @@ async function renderToday() {
     </div>
     <div class="today-meta">
       <span class="pill">🔥 连续复习 <b>${data.streak}</b> 天</span>
-      <span class="pill" id="pillStars"><span class="star-ico">★</span> 今日 +${data.stars_today}</span>
+      <span class="pill" id="pillStars"><span class="star-ico">★</span> 今日 ${fmtDelta(data.stars_today)}</span>
       ${data.total_due > n ? `<span class="pill" style="color:#9A6B00">还有 ${data.total_due - n} 只在排队</span>` : ""}
       ${data.pending_verify ? `<span class="pill" style="color:#D94A3B">待复核 ${data.pending_verify} 题</span>` : ""}
     </div>`;
@@ -365,7 +366,7 @@ function renderTodayDone() {
     <div class="card empty-state">
       <div class="mascot">${monsterSVG("#22B573", "cheer", 130)}</div>
       <h3>今天的小怪兽都消灭啦！</h3>
-      <p>今日共得 ${state.today.stars_today} 颗星，明天有新的到期题再来</p>
+      <p>今日 ${fmtDelta(state.today.stars_today)} 颗星，明天有新的到期题再来</p>
       ${challengeRow}
       <p style="margin-top:14px"><a class="btn btn-ghost" href="#/me">去我的页面看星星</a></p>
     </div>`;
@@ -410,7 +411,7 @@ async function judge(result, btnEl) {
     if (res.day_bonus) setTimeout(() => { flyStar(innerWidth / 2, innerHeight / 2, 5); toast("今日全对奖励 +2 颗星！"); }, 600);
     state.today.stars_today += stars + (res.day_bonus ? 2 : 0);
     const ps = $("#pillStars");
-    if (ps) ps.innerHTML = `<span class="star-ico">★</span> 今日 +${state.today.stars_today}`;
+    if (ps) ps.innerHTML = `<span class="star-ico">★</span> 今日 ${fmtDelta(state.today.stars_today)}`;
     const justMastered = res.item.status === "mastered" && it.status !== "mastered";
     Object.assign(it, res.item);   // 同步最新状态供完成页使用
     state.tIdx++;
@@ -487,7 +488,7 @@ async function openVariantChallenge(itemId) {
         if (state.today) {
           state.today.stars_today += r.stars;
           const ps = $("#pillStars");
-          if (ps) ps.innerHTML = `<span class="star-ico">★</span> 今日 +${state.today.stars_today}`;
+          if (ps) ps.innerHTML = `<span class="star-ico">★</span> 今日 ${fmtDelta(state.today.stars_today)}`;
         }
         toast("变式挑战成功！+2 颗星 ⚔️");
       } else {
@@ -1424,7 +1425,7 @@ async function renderMe() {
   box.innerHTML = `
     <div class="me-hero">
       <div><div class="stars">★ ${me.stars}</div><div class="sl">可用星星</div></div>
-      <div class="side">累计赚得 ${me.stars_earned}<br>今日 +${me.stars_today} · 🔥 连续 ${me.streak} 天</div>
+      <div class="side">累计赚得 ${me.stars_earned}<br>今日 ${fmtDelta(me.stars_today)} · 🔥 连续 ${me.streak} 天</div>
     </div>
     <div class="card"><div class="card-title"><span class="ico">✨</span>星星流水</div>
       <div class="redeem-list">${(me.ledger || []).map(lgRow).join("")
