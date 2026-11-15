@@ -150,9 +150,9 @@ def stars_earned(conn) -> int:
     return conn.execute("SELECT COALESCE(SUM(stars),0) s FROM star_ledger WHERE stars > 0").fetchone()["s"]
 
 
-def add_stars(conn, event: str, item_id, num: int, now_iso: str):
-    conn.execute("INSERT INTO star_ledger(event, item_id, stars, created_at) VALUES(?,?,?,?)",
-                 (event, item_id, num, now_iso))
+def add_stars(conn, event: str, item_id, num: int, now_iso: str, note: str | None = None):
+    conn.execute("INSERT INTO star_ledger(event, item_id, stars, note, created_at) VALUES(?,?,?,?,?)",
+                 (event, item_id, num, note, now_iso))
 
 
 def compute_badges(conn) -> list[dict]:

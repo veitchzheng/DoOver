@@ -580,3 +580,29 @@ def test_term_lists_always_include_current(client):
         assert s["term"] == "三年级上"
     finally:
         client.put("/api/settings", json={"current_term": "三年级上"})
+
+
+# ---------- 手动奖励星星（家长专属） ----------
+
+def test_stars_manual_award(client):
+    """家长手动加星入流水、孩子端可见原因；非法星数 400、孩子越权 403 硬隔离"""
+    before = client.get("/api/me").json()
+    r = client.post("/api/stars/award", json={"stars": 5, "note": "主动完成作业"})
+    assert r.status_code == 200
+    assert r.json()["balance"] == before["stars"] + 5
+    assert r.json()["earned"] == before["stars_earned"] + 5
+    me = client.get("/api/me").json()
+    assert me["stars"] == before["stars"] + 5
+    assert me["stars_earned"] == before["stars_earned"] + 5
+    lg = me["ledger"][0]                              # 最新一条流水
+    assert lg["event"] == "manual" and lg["stars"] == 5
+    assert lg["note"] == "主动完成作业"               # 孩子端星星流水可见奖励原因
+    # 校验：0/100/布尔一律 400
+    assert client.post("/api/stars/award", json={"stars": 0}).status_code == 400
+    assert client.post("/api/stars/award", json={"stars": 100}).status_code == 400
+    assert client.post("/api/stars/award", json={"stars": True}).status_code == 400
+    # 孩子端硬隔离：403，且不产生任何流水
+    with TestClient(server.app) as c:
+        c.post("/api/login", json={"code": CHILD_CODE})
+        assert c.post("/api/stars/award", json={"stars": 1}).status_code == 403
+    assert client.get("/api/me").json()["stars"] == before["stars"] + 5

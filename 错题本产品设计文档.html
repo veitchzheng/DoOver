@@ -598,7 +598,7 @@ data/ 数据目录（NAS 卷，备份的最小单元）
         <tr><td>item（错题主表）</td><td>科目、题型（照片/错字词）、知识点 ID、错误原因、拼音提示、孩子错写、正确写法、错误答案备注、正确做法备注、阶段（0~5）、到期日、错次、状态、学期、创建时间</td></tr>
         <tr><td>photo</td><td>item_id、原图路径、缩略图路径</td></tr>
         <tr><td>review_log</td><td>item_id、判定结果（✅/⚠️/❌）、判定人、待复核标记、时间（只追加不修改）</td></tr>
-        <tr><td>star_ledger</td><td>事件类型、关联题 ID、星数、时间（勋章由日志推算，不另建表；兑换扣星记 event=redeem 负数流水）</td></tr>
+        <tr><td>star_ledger</td><td>事件类型、关联题 ID、星数、备注（手动奖励原因）、时间（勋章由日志推算，不另建表；兑换扣星记 event=redeem 负数流水）</td></tr>
         <tr><td>redemptions</td><td>兑换申请：内容、星数、状态（待审批/已兑换/未通过）、申请与审批时间</td></tr>
         <tr><td>knowledge_point</td><td>科目、名称、内置标记（三、四年级预置）</td></tr>
         <tr><td>settings</td><td>键、值（每日上限、复核开关、访问码、奖励规则、学期）</td></tr>
@@ -624,7 +624,7 @@ data/ 数据目录（NAS 卷，备份的最小单元）
         <tr><td>DELETE</td><td>/api/items/{id}</td><td>删除误录</td></tr>
         <tr><td>POST</td><td>/api/items/{id}/review</td><td>提交判定（✅/⚠️/❌）</td></tr>
         <tr><td>GET</td><td>/api/stats</td><td>数字卡、薄弱 TOP5、错因占比</td></tr>
-        <tr><td>GET</td><td>/api/me</td><td>星星、勋章、光荣榜</td></tr>
+        <tr><td>GET</td><td>/api/me</td><td>星星、勋章、光荣榜、兑换申请、星星流水</td></tr>
         <tr><td>GET / PUT</td><td>/api/settings</td><td>每日上限、复核开关、奖励规则</td></tr>
         <tr><td>POST</td><td>/api/export/pdf</td><td>生成 PDF，返回下载地址</td></tr>
         <tr><td>POST</td><td>/api/backup</td><td>手动触发备份</td></tr>

@@ -1412,11 +1412,23 @@ async function renderMe() {
           : ""}
       </div>`;
   const rdPendingN = me.redeems.filter(r => r.status === "pending").length;
+  const STAR_EV = { pass: "做对", master: "消灭", stubborn_master: "顽固逆袭", day_all: "当日全清",
+                   variant: "变式挑战", verify_reject: "复核追回", redeem: "兑换", manual: "⭐ 家长奖励" };
+  const lgRow = l => `
+      <div class="redeem-row">
+        <span class="rd-note">${esc(STAR_EV[l.event] || l.event)}${l.note ? ` · ${esc(l.note)}` : ""}</span>
+        <span class="rd-stars ${l.stars < 0 ? "neg" : ""}">${l.stars > 0 ? "+" + l.stars : l.stars}</span>
+        <span class="rd-date">${String(l.created_at).slice(5, 10)}</span>
+      </div>`;
   const box = $("#page-me");
   box.innerHTML = `
     <div class="me-hero">
       <div><div class="stars">★ ${me.stars}</div><div class="sl">可用星星</div></div>
       <div class="side">累计赚得 ${me.stars_earned}<br>今日 +${me.stars_today} · 🔥 连续 ${me.streak} 天</div>
+    </div>
+    <div class="card"><div class="card-title"><span class="ico">✨</span>星星流水</div>
+      <div class="redeem-list">${(me.ledger || []).map(lgRow).join("")
+        || "<p style='font-size:13px;color:var(--ink2)'>还没有星星记录，做题或等家长奖励都会出现在这里</p>"}</div>
     </div>
     <div class="card"><div class="card-title"><span class="ico">🏅</span>勋章墙</div>
       <div class="badge-grid">${me.badges.map(b => `
@@ -1446,7 +1458,15 @@ async function renderMe() {
           <div class="redeem-list">${me.redeems.map(rdRow).join("")
             || "<p style='font-size:13px;color:var(--ink2)'>攒够星星就可以申请兑换上面的奖励啦</p>"}</div>
         </div>`
-      : `<div class="card"><div class="card-title"><span class="ico">🎁</span>星星兑换规则</div>
+      : `<div class="card"><div class="card-title"><span class="ico">⭐</span>手动奖励</div>
+          <p style="font-size:13px;color:var(--ink2);line-height:1.6;margin-bottom:4px">表扬孩子在应用外的表现，直接加星；孩子端「星星流水」能看到奖励原因</p>
+          <div class="redeem-apply">
+            <input class="input" id="awardStars" type="number" min="1" max="99" inputmode="numeric" placeholder="星数" style="flex:0 0 92px;min-width:92px;text-align:center">
+            <input class="input" id="awardNote" maxlength="100" placeholder="备注（选填）如：主动完成作业">
+            <button class="btn btn-brand btn-sm" data-act="award">奖励 ⭐</button>
+          </div>
+        </div>
+      <div class="card"><div class="card-title"><span class="ico">🎁</span>星星兑换规则</div>
           <textarea class="input" id="rewardRule">${esc(me.reward_rule)}</textarea>
         <div style="margin-top:10px;text-align:right">
           <button class="btn btn-brand btn-sm" data-act="saveReward">保存规则</button></div></div>
@@ -1518,6 +1538,14 @@ async function renderMe() {
     catch (err) { toast(err.message); }
   });
   if (state.role === "child") return;   // ↓↓ 以下均为家长专属控件的绑定
+  box.querySelector("[data-act=award]")?.addEventListener("click", async () => {
+    const stars = Number($("#awardStars").value);
+    const note = $("#awardNote").value.trim();
+    if (!Number.isInteger(stars) || stars < 1 || stars > 99) return toast("星数填 1~99 的整数");
+    try { const r = await api("/api/stars/award", { method: "POST", body: { stars, note } });
+      toast(`已奖励 ${stars} 颗星，可用 ${r.balance} 颗 ⭐`); renderMe(); }
+    catch (e) { toast(e.message); }
+  });
   box.querySelectorAll("[data-act=rdApprove]").forEach(b => b.addEventListener("click", async () => {
     try { const r = await api(`/api/redeem/${b.dataset.id}/approve`, { method: "POST" });
       toast(`已批准兑换，可用 ${r.balance} 颗星`); renderMe(); }

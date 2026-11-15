@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS star_ledger (
   event TEXT NOT NULL,
   item_id INTEGER,
   stars INTEGER NOT NULL,
+  note TEXT,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_star_date ON star_ledger(created_at);
@@ -136,7 +137,7 @@ def load_secret() -> str:
     return secret
 
 
-# 老库升级：items 表新增列（AI 错题分析）。CREATE TABLE IF NOT EXISTS 不会给已有表加列，
+# 老库升级：新表列按版本追加。CREATE TABLE IF NOT EXISTS 不会给已有表加列，
 # 这里逐一比对补齐，老数据全部保留。
 ITEM_AI_COLUMNS = {
     "question_text": "TEXT",
@@ -149,13 +150,17 @@ ITEM_AI_COLUMNS = {
     "ai_model": "TEXT",
     "ai_error": "TEXT",
 }
+STAR_LEDGER_COLUMNS = {        # 1.0.9：手动奖励的备注进流水
+    "note": "TEXT",
+}
 
 
 def migrate(conn):
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(items)")}
-    for name, decl in ITEM_AI_COLUMNS.items():
-        if name not in cols:
-            conn.execute(f"ALTER TABLE items ADD COLUMN {name} {decl}")
+    for table, extra in (("items", ITEM_AI_COLUMNS), ("star_ledger", STAR_LEDGER_COLUMNS)):
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, decl in extra.items():
+            if name not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def init_db():

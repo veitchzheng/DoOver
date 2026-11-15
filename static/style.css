@@ -304,6 +304,7 @@ textarea.input{min-height:74px;resize:vertical}
 .rd-pending{color:#B4791B}.rd-approved{color:#2E8B57}.rd-rejected{color:#B05A4A}
 .rd-date{margin-left:auto;color:var(--ink2);font-size:12px;flex:none}
 .rd-acts{display:flex;gap:6px;flex:none}
+.rd-stars.neg{color:var(--fail)}
 .set-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:12px 2px;border-bottom:1px dashed var(--line2);font-size:14.5px;font-weight:700}
 .set-row:last-child{border-bottom:none}

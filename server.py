@@ -984,11 +984,14 @@ def me():
         redeems = [dict(r) for r in conn.execute(
             "SELECT id, note, stars, status, created_at, judged_at FROM redemptions "
             "ORDER BY (status='pending') DESC, COALESCE(judged_at, created_at) DESC LIMIT 20")]
+        ledger = [dict(r) for r in conn.execute(
+            "SELECT event, stars, note, created_at FROM star_ledger "
+            "ORDER BY id DESC LIMIT 8")]   # 星星流水：孩子能看到每笔星从哪来（含手动奖励备注）
         return {"stars": stars, "stars_earned": stars_earned, "stars_today": stars_today,
                 "streak": engine.streak(conn, t_iso),
                 "badges": engine.compute_badges(conn), "glory": glory,
                 "reward_rule": db.settings_get(conn, "reward_rule", ""),
-                "redeems": redeems}
+                "redeems": redeems, "ledger": ledger}
     finally:
         conn.close()
 
@@ -1078,6 +1081,23 @@ def redeem_cancel(rid: int):
         conn.execute("DELETE FROM redemptions WHERE id=?", (rid,))
         conn.commit()
         return {"ok": True}
+    finally:
+        conn.close()
+
+
+@parent.post("/stars/award")
+def stars_award(body: dict = Body(...)):
+    """家长手动奖励星星：表扬孩子在应用外的表现，note 记原因进流水，孩子端可见"""
+    stars = body.get("stars")
+    if not isinstance(stars, int) or isinstance(stars, bool) or not 1 <= stars <= 99:
+        raise HTTPException(400, "星星数量须为 1~99 的整数")
+    note = _clip(body.get("note"), 100)
+    conn = db.get_conn()
+    try:
+        engine.add_stars(conn, "manual", None, stars, db.now_str(), note=note or None)
+        conn.commit()
+        return {"ok": True, "balance": engine.total_stars(conn),
+                "earned": engine.stars_earned(conn)}
     finally:
         conn.close()
 
